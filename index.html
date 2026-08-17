@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.3 — 17 Aug 2026
+     v1.4 — 17 Aug 2026
+     v1.4: added Exceptions & Alerts Feed — live open HubSpot tickets
+       via new api/exceptions.js, using the read-only Service Key
      v1.3: added Rate Card section (Update-a-Service-Price + Rate Card
        Admin Tool), flagged as write-access / John & Christine only
      v1.2: added Launcher section (HubSpot, Xero, Vercel, MS365 tiles)
@@ -181,6 +183,48 @@
       font-size: 0.78rem;
       color: var(--muted);
     }
+    .exceptions-list {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .exception-item {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--error);
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      text-decoration: none;
+      color: var(--text);
+      gap: 12px;
+    }
+    .exception-item:hover {
+      border-left-color: #f87171;
+    }
+    .exception-item .subject {
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .exception-item .meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .exceptions-empty {
+      max-width: 1000px;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 20px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+    }
     button {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -240,6 +284,11 @@
     </a>
   </div>
 
+  <div class="section-heading" id="exceptions-heading">Exceptions &amp; Alerts</div>
+  <div class="exceptions-list" id="exceptions-list">
+    <div class="exceptions-empty">Loading open tickets…</div>
+  </div>
+
   <script>
     async function loadStatus() {
       const grid = document.getElementById('agent-grid');
@@ -294,6 +343,46 @@
     loadStatus();
     // Auto-refresh every 60 seconds
     setInterval(loadStatus, 60000);
+
+    function timeAgo(isoString) {
+      if (!isoString) return '';
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+      return `${Math.floor(hours / 24)}d ago`;
+    }
+
+    async function loadExceptions() {
+      const list = document.getElementById('exceptions-list');
+      const heading = document.getElementById('exceptions-heading');
+      try {
+        const res = await fetch('/api/exceptions');
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Failed to load');
+
+        heading.textContent = `Exceptions & Alerts (${data.openCount} open)`;
+
+        if (data.tickets.length === 0) {
+          list.innerHTML = '<div class="exceptions-empty">No open tickets — nothing needs attention right now.</div>';
+          return;
+        }
+
+        list.innerHTML = data.tickets.map(t => `
+          <a class="exception-item" href="${t.url}" target="_blank" rel="noopener">
+            <span class="subject">${t.subject}</span>
+            <span class="meta">${timeAgo(t.createdAt)}</span>
+          </a>
+        `).join('');
+      } catch (err) {
+        list.innerHTML = '<div class="exceptions-empty">Could not load open tickets. Refresh to try again.</div>';
+      }
+    }
+
+    loadExceptions();
+    setInterval(loadExceptions, 60000);
   </script>
 </body>
 </html>
