@@ -1,49 +1,23 @@
 // FWS Command Center — Exceptions & Alerts Feed
-// v1.1 — 17 Aug 2026
-// v1.1: FIX — was using GET /crm/v3/objects/tickets with a `sorts`
-//   query param, which that endpoint silently ignores (sorting is
-//   only supported on the Search endpoint). This meant we were
-//   pulling an arbitrary batch of tickets instead of the true most
-//   recent ones — some genuinely old still-open tickets were showing
-//   up while truly recent ones may have been missed. Now uses
-//   POST /crm/v3/objects/tickets/search, which properly supports
-//   sorting by createdate.
-// v1.0: Pulls open HubSpot tickets (Agent 2/3 already create tickets
-//   specifically when something needs human attention — failed
-//   invoices, Client Not Found, overdue checks, etc.) so "open
-//   tickets" genuinely IS the exceptions feed, no separate logic
-//   needed. Closed-vs-open detection confirmed correct against this
-//   portal's real pipeline metadata (isClosed / ticketState fields).
+// v2.0 — 17 Aug 2026
+// v2.0: REBUILT on the real signals, per John's correction — "open
+//   ticket" was too broad (most open tickets are just normal in-
+//   flight invoices moving through Invoiced→Payment stages, not
+//   exceptions). The two genuine exception sources are:
+//     1. Agent 2's flag: Invoice records (object 0-53) with
+//        validation_status = "Needs Review" (SP pricing variance,
+//        services not found, etc.) — NOT a ticket. Agent 2's own
+//        ticket-creation step for these has a known unresolved bug,
+//        so checking tickets alone would miss these entirely.
+//     2. Agent 3's flag: tickets sitting in the "Overdue" pipeline
+//        stage (confirmed id 3506368961 in this portal) — drafts
+//        that sat in Xero too long without completing.
+// v1.x: showed ALL open tickets — too noisy, superseded by this.
 
 const HUBSPOT_SERVICE_KEY = process.env.HUBSPOT_SERVICE_KEY;
 const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 const PORTAL_ID = '441953864';
-
-async function hubspotFetch(path) {
-  const resp = await fetch(`${HUBSPOT_API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}` },
-  });
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`HubSpot API error (${resp.status}): ${errText}`);
-  }
-  return resp.json();
-}
-
-async function getClosedStageIds() {
-  const data = await hubspotFetch('/crm/v3/pipelines/tickets');
-  const closedIds = new Set();
-  for (const pipeline of data.results || []) {
-    for (const stage of pipeline.stages || []) {
-      const isClosed =
-        stage.metadata?.isClosed === 'true' ||
-        stage.metadata?.ticketState === 'CLOSED' ||
-        /closed/i.test(stage.label || '');
-      if (isClosed) closedIds.add(stage.id);
-    }
-  }
-  return closedIds;
-}
+const OVERDUE_STAGE_ID = '3506368961';
 
 async function hubspotPost(path, body) {
   const resp = await fetch(`${HUBSPOT_API_BASE}${path}`, {
@@ -61,19 +35,42 @@ async function hubspotPost(path, body) {
   return resp.json();
 }
 
-async function getRecentTickets() {
-  // v1.1 FIX: the plain GET list endpoint doesn't actually support a
-  // `sorts` query param (that's a Search-API-only feature) — it was
-  // silently ignored, so v1.0 returned an arbitrary batch of tickets
-  // rather than the true most-recent ones. Using the real Search
-  // endpoint here instead, which does support sorting properly.
-  const properties = ['subject', 'hs_pipeline_stage', 'createdate', 'hs_ticket_priority'];
-  const data = await hubspotPost('/crm/v3/objects/tickets/search', {
+async function getNeedsReviewInvoices() {
+  const data = await hubspotPost('/crm/v3/objects/0-53/search', {
     limit: 100,
-    properties,
+    properties: ['validation_status', 'validation_issues', 'supplier_invoice_number', 'createdate'],
+    filterGroups: [
+      { filters: [{ propertyName: 'validation_status', operator: 'EQ', value: 'Needs Review' }] },
+    ],
     sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
   });
-  return data.results || [];
+  return (data.results || []).map((r) => ({
+    kind: 'invoice_review',
+    id: r.id,
+    subject: r.properties.supplier_invoice_number
+      ? `Invoice ${r.properties.supplier_invoice_number}: ${r.properties.validation_issues || 'Needs review'}`
+      : `Invoice needs review: ${r.properties.validation_issues || '(no details)'}`,
+    createdAt: r.properties.createdate,
+    url: `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-53/${r.id}`,
+  }));
+}
+
+async function getOverdueTickets() {
+  const data = await hubspotPost('/crm/v3/objects/tickets/search', {
+    limit: 100,
+    properties: ['subject', 'createdate'],
+    filterGroups: [
+      { filters: [{ propertyName: 'hs_pipeline_stage', operator: 'EQ', value: OVERDUE_STAGE_ID }] },
+    ],
+    sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+  });
+  return (data.results || []).map((t) => ({
+    kind: 'overdue_ticket',
+    id: t.id,
+    subject: `Overdue: ${t.properties.subject || '(no subject)'}`,
+    createdAt: t.properties.createdate,
+    url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${t.id}`,
+  }));
 }
 
 export default async function handler(req, res) {
@@ -82,27 +79,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [closedStageIds, tickets] = await Promise.all([
-      getClosedStageIds(),
-      getRecentTickets(),
+    const [needsReview, overdue] = await Promise.all([
+      getNeedsReviewInvoices(),
+      getOverdueTickets(),
     ]);
 
-    const openTickets = tickets
-      .filter((t) => !closedStageIds.has(t.properties.hs_pipeline_stage))
-      .slice(0, 20)
-      .map((t) => ({
-        id: t.id,
-        subject: t.properties.subject || '(no subject)',
-        priority: t.properties.hs_ticket_priority || null,
-        createdAt: t.properties.createdate,
-        url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${t.id}`,
-      }));
+    const combined = [...needsReview, ...overdue].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+    );
 
     return res.status(200).json({
       status: 'ok',
       checkedAt: new Date().toISOString(),
-      openCount: openTickets.length,
-      tickets: openTickets,
+      openCount: combined.length,
+      tickets: combined,
     });
   } catch (error) {
     return res.status(500).json({ error: 'Internal server error', message: error.message });
