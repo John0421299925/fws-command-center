@@ -1,4 +1,9 @@
 <!DOCTYPE html>
+<!-- FWS Command Center — index.html
+     v1.2 — 17 Aug 2026
+     v1.2: added Launcher section (HubSpot, Xero, Vercel, MS365 tiles)
+     v1.1: added manual pause-note display for Agent 1 / Enrichment Agent
+     v1.0: initial Agent Health cards -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -107,6 +112,42 @@
       font-size: 0.8rem;
       text-align: center;
     }
+    .section-heading {
+      max-width: 1000px;
+      margin: 40px auto 16px;
+      font-size: 0.95rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .launcher-grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .launcher-tile {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 16px;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: border-color 0.15s ease;
+    }
+    .launcher-tile:hover {
+      border-color: var(--muted);
+    }
+    .launcher-tile .icon {
+      font-size: 1.3rem;
+      line-height: 1;
+    }
     button {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -135,6 +176,22 @@
     <span id="last-checked">Checking...</span>
     &nbsp;·&nbsp;
     <button onclick="loadStatus()">Refresh now</button>
+  </div>
+
+  <div class="section-heading">Launcher</div>
+  <div class="launcher-grid">
+    <a class="launcher-tile" href="https://app.hubspot.com/contacts/441953864" target="_blank" rel="noopener">
+      <span class="icon">🧭</span> HubSpot
+    </a>
+    <a class="launcher-tile" href="https://go.xero.com/" target="_blank" rel="noopener">
+      <span class="icon">💰</span> Xero
+    </a>
+    <a class="launcher-tile" href="https://vercel.com/john0421299925s-projects" target="_blank" rel="noopener">
+      <span class="icon">▲</span> Vercel
+    </a>
+    <a class="launcher-tile" href="https://outlook.office.com/mail/" target="_blank" rel="noopener">
+      <span class="icon">✉️</span> MS365 / Outlook
+    </a>
   </div>
 
   <script>
