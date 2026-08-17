@@ -5,33 +5,179 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FWS Command Center</title>
   <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --ok: #22c55e;
+      --error: #ef4444;
+      --unknown: #f59e0b;
+    }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f172a;
-      color: #f1f5f9;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 20px 60px;
+    }
+    header {
+      max-width: 1000px;
+      margin: 0 auto 32px;
+    }
+    header h1 {
+      font-size: 1.6rem;
+      margin: 0 0 4px;
+    }
+    header p {
+      color: var(--muted);
+      margin: 0;
+      font-size: 0.9rem;
+    }
+    .grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .card-top {
       display: flex;
       align-items: center;
-      justify-content: center;
-      height: 100vh;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .card-top h2 {
+      font-size: 1.05rem;
+      margin: 0;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .dot.error, .dot.unreachable { background: var(--error); box-shadow: 0 0 8px var(--error); }
+    .dot.unknown, .dot.loading { background: var(--unknown); }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      padding: 4px 0;
+      color: var(--muted);
+    }
+    .row span:last-child {
+      color: var(--text);
+      text-align: right;
+    }
+    .status-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+    .status-label.ok { background: rgba(34,197,94,0.15); color: var(--ok); }
+    .status-label.error, .status-label.unreachable { background: rgba(239,68,68,0.15); color: var(--error); }
+    .status-label.unknown, .status-label.loading { background: rgba(245,158,11,0.15); color: var(--unknown); }
+    .refresh-note {
+      max-width: 1000px;
+      margin: 24px auto 0;
+      color: var(--muted);
+      font-size: 0.8rem;
       text-align: center;
     }
-    .box {
-      padding: 40px;
+    button {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
     }
-    h1 {
-      font-size: 2rem;
-      margin-bottom: 8px;
-    }
-    p {
-      color: #94a3b8;
-    }
+    button:hover { border-color: var(--muted); }
   </style>
 </head>
 <body>
-  <div class="box">
+  <header>
     <h1>FWS Command Center</h1>
-    <p>Deploy pipeline confirmed working. Agent Health cards coming next.</p>
+    <p>Agent Health — live status of all automation systems</p>
+  </header>
+
+  <div class="grid" id="agent-grid">
+    <div class="card">
+      <div class="card-top"><h2>Loading agents...</h2><div class="dot loading"></div></div>
+    </div>
   </div>
+
+  <div class="refresh-note">
+    <span id="last-checked">Checking...</span>
+    &nbsp;·&nbsp;
+    <button onclick="loadStatus()">Refresh now</button>
+  </div>
+
+  <script>
+    async function loadStatus() {
+      const grid = document.getElementById('agent-grid');
+      const lastChecked = document.getElementById('last-checked');
+      lastChecked.textContent = 'Checking...';
+
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        grid.innerHTML = data.agents.map(agent => {
+          const statusClass = agent.status;
+          const versionRow = agent.version
+            ? `<div class="row"><span>Version</span><span>${agent.version}</span></div>`
+            : '';
+          const detailRow = agent.detail
+            ? `<div class="row"><span>Detail</span><span>${agent.detail}</span></div>`
+            : '';
+          const responseRow = agent.responseMs !== undefined
+            ? `<div class="row"><span>Response time</span><span>${agent.responseMs}ms</span></div>`
+            : '';
+
+          return `
+            <div class="card">
+              <div class="card-top">
+                <h2>${agent.name}</h2>
+                <div class="dot ${statusClass}"></div>
+              </div>
+              <div class="row">
+                <span>Status</span>
+                <span class="status-label ${statusClass}">${agent.status}</span>
+              </div>
+              ${versionRow}
+              ${detailRow}
+              ${responseRow}
+            </div>
+          `;
+        }).join('');
+
+        const checkedTime = new Date(data.checkedAt).toLocaleTimeString();
+        lastChecked.textContent = `Last checked: ${checkedTime}`;
+      } catch (err) {
+        grid.innerHTML = `<div class="card"><div class="card-top"><h2>Could not reach status checker</h2><div class="dot error"></div></div></div>`;
+        lastChecked.textContent = 'Refresh failed — try again';
+      }
+    }
+
+    loadStatus();
+    // Auto-refresh every 60 seconds
+    setInterval(loadStatus, 60000);
+  </script>
 </body>
 </html>
