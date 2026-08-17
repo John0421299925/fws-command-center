@@ -1,13 +1,19 @@
 // FWS Command Center — Exceptions & Alerts Feed
-// v1.0 — 17 Aug 2026
-// Pulls open HubSpot tickets (Agent 2/3 already create tickets
-// specifically when something needs human attention — failed
-// invoices, Client Not Found, overdue checks, etc.) so "open tickets"
-// genuinely IS the exceptions feed, no separate logic needed.
-//
-// To correctly tell "open" from "closed" we first ask HubSpot for the
-// real ticket pipeline stage setup (every portal can configure this
-// differently) rather than guessing at stage names.
+// v1.1 — 17 Aug 2026
+// v1.1: FIX — was using GET /crm/v3/objects/tickets with a `sorts`
+//   query param, which that endpoint silently ignores (sorting is
+//   only supported on the Search endpoint). This meant we were
+//   pulling an arbitrary batch of tickets instead of the true most
+//   recent ones — some genuinely old still-open tickets were showing
+//   up while truly recent ones may have been missed. Now uses
+//   POST /crm/v3/objects/tickets/search, which properly supports
+//   sorting by createdate.
+// v1.0: Pulls open HubSpot tickets (Agent 2/3 already create tickets
+//   specifically when something needs human attention — failed
+//   invoices, Client Not Found, overdue checks, etc.) so "open
+//   tickets" genuinely IS the exceptions feed, no separate logic
+//   needed. Closed-vs-open detection confirmed correct against this
+//   portal's real pipeline metadata (isClosed / ticketState fields).
 
 const HUBSPOT_SERVICE_KEY = process.env.HUBSPOT_SERVICE_KEY;
 const HUBSPOT_API_BASE = 'https://api.hubapi.com';
@@ -39,11 +45,34 @@ async function getClosedStageIds() {
   return closedIds;
 }
 
+async function hubspotPost(path, body) {
+  const resp = await fetch(`${HUBSPOT_API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`HubSpot API error (${resp.status}): ${errText}`);
+  }
+  return resp.json();
+}
+
 async function getRecentTickets() {
+  // v1.1 FIX: the plain GET list endpoint doesn't actually support a
+  // `sorts` query param (that's a Search-API-only feature) — it was
+  // silently ignored, so v1.0 returned an arbitrary batch of tickets
+  // rather than the true most-recent ones. Using the real Search
+  // endpoint here instead, which does support sorting properly.
   const properties = ['subject', 'hs_pipeline_stage', 'createdate', 'hs_ticket_priority'];
-  const data = await hubspotFetch(
-    `/crm/v3/objects/tickets?limit=100&properties=${properties.join(',')}&sorts=-createdate`
-  );
+  const data = await hubspotPost('/crm/v3/objects/tickets/search', {
+    limit: 100,
+    properties,
+    sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+  });
   return data.results || [];
 }
 
