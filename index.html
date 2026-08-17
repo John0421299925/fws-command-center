@@ -91,6 +91,15 @@
     .status-label.ok { background: rgba(34,197,94,0.15); color: var(--ok); }
     .status-label.error, .status-label.unreachable { background: rgba(239,68,68,0.15); color: var(--error); }
     .status-label.unknown, .status-label.loading { background: rgba(245,158,11,0.15); color: var(--unknown); }
+    .manual-note {
+      margin-top: 12px;
+      padding: 8px 10px;
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.35);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      color: var(--unknown);
+    }
     .refresh-note {
       max-width: 1000px;
       margin: 24px auto 0;
@@ -149,6 +158,9 @@
           const responseRow = agent.responseMs !== undefined
             ? `<div class="row"><span>Response time</span><span>${agent.responseMs}ms</span></div>`
             : '';
+          const manualNoteBlock = agent.manualNote
+            ? `<div class="manual-note">⚠ ${agent.manualNote}</div>`
+            : '';
 
           return `
             <div class="card">
@@ -163,6 +175,7 @@
               ${versionRow}
               ${detailRow}
               ${responseRow}
+              ${manualNoteBlock}
             </div>
           `;
         }).join('');
