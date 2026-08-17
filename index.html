@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.2 — 17 Aug 2026
+     v1.3 — 17 Aug 2026
+     v1.3: added Rate Card section (Update-a-Service-Price + Rate Card
+       Admin Tool), flagged as write-access / John & Christine only
      v1.2: added Launcher section (HubSpot, Xero, Vercel, MS365 tiles)
      v1.1: added manual pause-note display for Agent 1 / Enrichment Agent
      v1.0: initial Agent Health cards -->
@@ -148,6 +150,37 @@
       font-size: 1.3rem;
       line-height: 1;
     }
+    .gated-note {
+      max-width: 1000px;
+      margin: 0 auto 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .rate-card-tile {
+      background: var(--card-bg);
+      border: 1px solid rgba(245,158,11,0.35);
+      border-radius: 12px;
+      padding: 18px 16px;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rate-card-tile:hover {
+      border-color: var(--unknown);
+    }
+    .rate-card-tile .title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    .rate-card-tile .desc {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
     button {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -191,6 +224,19 @@
     </a>
     <a class="launcher-tile" href="https://outlook.office.com/mail/" target="_blank" rel="noopener">
       <span class="icon">✉️</span> MS365 / Outlook
+    </a>
+  </div>
+
+  <div class="section-heading">Rate Card</div>
+  <div class="gated-note">John &amp; Christine only — these tools write directly to HubSpot pricing</div>
+  <div class="launcher-grid">
+    <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-update.html" target="_blank" rel="noopener">
+      <div class="title-row">⚡ Update a Service Price</div>
+      <div class="desc">Quick single-price change — cascading dropdown</div>
+    </a>
+    <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-admin.html" target="_blank" rel="noopener">
+      <div class="title-row">📋 Rate Card Admin Tool</div>
+      <div class="desc">Browse &amp; edit, new service, bulk import/export</div>
     </a>
   </div>
 
