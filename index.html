@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.4 — 17 Aug 2026
+     v1.5 — 17 Aug 2026
+     v1.5: added "On the Horizon" section — dashed-border, non-
+       functional placeholder cards (Business Analysis, Point of Sale
+       Capture, Automated Quotations, Website Content Queue,
+       Sustainability Portal) so James can see the full scope of
+       what's planned, not just what's live, ahead of the 20 Aug
+       meeting.
      v1.4: added Exceptions & Alerts Feed — live open HubSpot tickets
        via new api/exceptions.js, using the read-only Service Key
      v1.3: added Rate Card section (Update-a-Service-Price + Rate Card
@@ -225,6 +231,53 @@
       border: 1px dashed var(--border);
       border-radius: 10px;
     }
+    .roadmap-grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .roadmap-card {
+      background: var(--card-bg);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      opacity: 0.85;
+    }
+    .roadmap-card .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .roadmap-card h2 {
+      font-size: 1.05rem;
+      margin: 0;
+    }
+    .coming-soon-badge {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(148,163,184,0.15);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .roadmap-card p {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+    .roadmap-card ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
     button {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -287,6 +340,56 @@
   <div class="section-heading" id="exceptions-heading">Exceptions &amp; Alerts</div>
   <div class="exceptions-list" id="exceptions-list">
     <div class="exceptions-empty">Loading open tickets…</div>
+  </div>
+
+  <div class="section-heading">On the Horizon</div>
+  <div class="roadmap-grid">
+    <div class="roadmap-card">
+      <div class="card-top"><h2>📊 Business Analysis</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>Revenue &amp; margin health, supplier costs, operational risk signals.</p>
+      <ul>
+        <li>Revenue by client, concentration risk</li>
+        <li>Margin % by client — flag below 15.5%</li>
+        <li>SP costs by supplier, price-variance trends</li>
+        <li>Inactive clients, rising alert trends</li>
+      </ul>
+    </div>
+    <div class="roadmap-card">
+      <div class="card-top"><h2>🎤 Point of Sale Capture</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>James leaves a voice note or voicemail with new client/service details.</p>
+      <ul>
+        <li>Voice → draft Company + Services record</li>
+        <li>One-click confirm by James or Christine</li>
+        <li>Capture mechanism to be chosen by James</li>
+      </ul>
+    </div>
+    <div class="roadmap-card">
+      <div class="card-top"><h2>💷 Automated Quotations</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>Draft client quotes drawn straight from the rate card.</p>
+      <ul>
+        <li>Pulls pricing from p_services rate card</li>
+        <li>Draft-then-confirm before sending</li>
+        <li>Not yet scoped in detail</li>
+      </ul>
+    </div>
+    <div class="roadmap-card">
+      <div class="card-top"><h2>🌐 Website Content Queue</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>Marketing &amp; website content drafted by Claude, reviewed before publishing.</p>
+      <ul>
+        <li>Case studies, thought leadership, site copy</li>
+        <li>Drafts awaiting review, recently published</li>
+        <li>Credibility-focused, not sales-focused</li>
+      </ul>
+    </div>
+    <div class="roadmap-card">
+      <div class="card-top"><h2>🌱 Sustainability Portal</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>Always-on client-facing sustainability reporting, not just periodic reports.</p>
+      <ul>
+        <li>Live diversion/recovery data by client</li>
+        <li>Genuine market differentiator</li>
+        <li>Parked — needs sample reports first</li>
+      </ul>
+    </div>
   </div>
 
   <script>
