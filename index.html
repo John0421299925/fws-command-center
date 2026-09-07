@@ -1,6 +1,22 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.6 — 17 Aug 2026
+     v1.7 — 7 Sept 2026
+     v1.7: ADDED "Confirm & Create Xero Draft" button on exception
+       items of kind "invoice_review" (held HubSpot invoices, per
+       exceptions.js v2.1). Calls the new api/approve-invoice.js proxy
+       in THIS project, which forwards server-side to
+       clv-invoice-automation's api/approve — avoids the same CORS
+       problem Agent Health already solved via api/status.js, since a
+       cross-origin browser call from this page straight to
+       clv-invoice-automation.vercel.app would be blocked. This button
+       does NOT mean the invoice is fully done — it only means the
+       numbers are confirmed correct in HubSpot and a Xero DRAFT has
+       been created; the actual release to the client still happens as
+       a separate step in Xero itself, same as before this button
+       existed. Exception items had to change from a single clickable
+       <a> wrapping the whole row to a <div> containing a separate link
+       (opens the HubSpot record) and a button side by side — a button
+       can't sit inside a clickable link.
      v1.6: fixed HubSpot launcher link (was landing on Contacts, now
        goes to the general dashboard homepage). Added WhatsApp Web
        tile to Launcher — link only for now; a deeper WhatsApp
@@ -202,6 +218,9 @@
       flex-direction: column;
       gap: 8px;
     }
+    /* v1.7: exception-item changed from a single clickable <a> to a
+       <div> — a button can't sit inside a clickable link, so the
+       subject is now its own inner link and the button sits beside it. */
     .exception-item {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -211,21 +230,56 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      text-decoration: none;
-      color: var(--text);
       gap: 12px;
     }
     .exception-item:hover {
       border-left-color: #f87171;
     }
-    .exception-item .subject {
+    .exception-item .subject-link {
+      color: var(--text);
+      text-decoration: none;
       font-size: 0.9rem;
       font-weight: 500;
+    }
+    .exception-item .subject-link:hover {
+      text-decoration: underline;
+    }
+    .exception-item .right-side {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
     }
     .exception-item .meta {
       font-size: 0.75rem;
       color: var(--muted);
       white-space: nowrap;
+    }
+    .approve-btn {
+      background: rgba(34,197,94,0.12);
+      border: 1px solid rgba(34,197,94,0.4);
+      color: var(--ok);
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s ease;
+    }
+    .approve-btn:hover { border-color: var(--ok); }
+    .approve-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .approve-btn.approve-btn-error {
+      background: rgba(239,68,68,0.12);
+      border-color: rgba(239,68,68,0.4);
+      color: var(--error);
+    }
+    .approve-btn.approve-btn-success {
+      background: rgba(34,197,94,0.2);
+      border-color: var(--ok);
     }
     .exceptions-empty {
       max-width: 1000px;
@@ -466,6 +520,64 @@
       return `${Math.floor(hours / 24)}d ago`;
     }
 
+    // v1.7: renders one exception row. Only kind === "invoice_review"
+    // (a HubSpot invoice held on validation, per exceptions.js v2.1)
+    // gets the "Confirm & Create Xero Draft" button — overdue tickets
+    // and stuck Xero drafts are informational only here, since fixing
+    // those means going into HubSpot/Xero directly, not a HubSpot
+    // numbers-correction step.
+    function renderExceptionItem(t) {
+      const button = t.kind === 'invoice_review'
+        ? `<button class="approve-btn" id="approve-btn-${t.id}" onclick="approveInvoice('${t.id}', this)">Confirm &amp; Create Xero Draft</button>`
+        : '';
+      return `
+        <div class="exception-item" id="exception-item-${t.id}">
+          <a class="subject-link" href="${t.url}" target="_blank" rel="noopener">${t.subject}</a>
+          <div class="right-side">
+            <span class="meta">${timeAgo(t.createdAt)}</span>
+            ${button}
+          </div>
+        </div>
+      `;
+    }
+
+    // v1.7: calls this project's own approve-invoice.js proxy, NOT
+    // clv-invoice-automation directly — a direct cross-origin call
+    // from this page would hit the same CORS problem already solved
+    // for Agent Health via api/status.js. The proxy forwards
+    // server-side and relays whatever approve.js decides; this
+    // function only reflects that result in the button itself.
+    async function approveInvoice(invoiceId, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Confirming…';
+      btn.classList.remove('approve-btn-error', 'approve-btn-success');
+
+      try {
+        const res = await fetch('/api/approve-invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoiceId }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || data.status !== 'ok') {
+          throw new Error(data.error || 'Confirm failed — see Vercel logs for details');
+        }
+
+        btn.textContent = `Xero draft ${data.xeroInvoiceId ? 'created' : 'confirmed'} ✓`;
+        btn.classList.add('approve-btn-success');
+        // Re-fetch the whole feed shortly after — this item should
+        // drop out entirely now that validation_status is Passed.
+        setTimeout(loadExceptions, 2500);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Failed — retry';
+        btn.classList.add('approve-btn-error');
+        console.error('approveInvoice failed:', err);
+      }
+    }
+
     async function loadExceptions() {
       const list = document.getElementById('exceptions-list');
       const heading = document.getElementById('exceptions-heading');
@@ -482,12 +594,7 @@
           return;
         }
 
-        list.innerHTML = data.tickets.map(t => `
-          <a class="exception-item" href="${t.url}" target="_blank" rel="noopener">
-            <span class="subject">${t.subject}</span>
-            <span class="meta">${timeAgo(t.createdAt)}</span>
-          </a>
-        `).join('');
+        list.innerHTML = data.tickets.map(renderExceptionItem).join('');
       } catch (err) {
         list.innerHTML = '<div class="exceptions-empty">Could not load open tickets. Refresh to try again.</div>';
       }
