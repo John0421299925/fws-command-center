@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.7 — 7 Sept 2026
+     v1.8 — 10 Sept 2026
+     v1.8: ADDED Business Vital Signs section — the real thing, not a
+       placeholder. Four glance-level metric cards (Revenue, Blended
+       Margin, AR Overdue, Concentration Risk) fed by three new
+       endpoints (api/margin-by-client.js, api/revenue-by-client.js,
+       api/ar-aging.js), plus three collapsible drill-down sections
+       (native <details>/<summary>, no extra JS needed) showing the
+       full client-by-client tables. Removed the "Business Analysis"
+       placeholder card from "On the Horizon" — it's live now, not a
+       future idea. Note: AR aging currently reflects Demo Company
+       data (fws-xero-reader's live-org swap is still pending James),
+       so real client names/amounts there will update automatically
+       once that's done — no code change needed when it happens.
      v1.7: ADDED "Confirm & Create Xero Draft" button on exception
        items of kind "invoice_review" (held HubSpot invoices, per
        exceptions.js v2.1). Calls the new api/approve-invoice.js proxy
@@ -218,9 +230,6 @@
       flex-direction: column;
       gap: 8px;
     }
-    /* v1.7: exception-item changed from a single clickable <a> to a
-       <div> — a button can't sit inside a clickable link, so the
-       subject is now its own inner link and the button sits beside it. */
     .exception-item {
       background: var(--card-bg);
       border: 1px solid var(--border);
@@ -291,6 +300,100 @@
       border: 1px dashed var(--border);
       border-radius: 10px;
     }
+    /* v1.8: Business Vital Signs */
+    .vital-signs-grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .vital-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .vital-card.flagged {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.35);
+    }
+    .vital-card.warning {
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.35);
+    }
+    .vital-card .label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0 0 4px;
+    }
+    .vital-card.flagged .label { color: var(--error); }
+    .vital-card.warning .label { color: var(--unknown); }
+    .vital-card .value {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .vital-card.flagged .value { color: var(--error); }
+    .vital-card.warning .value { color: var(--unknown); }
+    .vital-card .sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 4px 0 0;
+    }
+    .vital-card.flagged .sub { color: var(--error); }
+    .vital-card.warning .sub { color: var(--unknown); }
+    .drilldown {
+      max-width: 1000px;
+      margin: 12px auto 0;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .drilldown summary {
+      padding: 14px 16px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .drilldown summary::-webkit-details-marker { display: none; }
+    .drilldown summary::after {
+      content: "▾";
+      color: var(--muted);
+      transition: transform 0.15s ease;
+    }
+    .drilldown[open] summary::after { transform: rotate(180deg); }
+    .drilldown table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .drilldown th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .drilldown td {
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .drilldown td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .drilldown tr.risk td:first-child { color: var(--error); font-weight: 500; }
+    .vital-signs-note {
+      max-width: 1000px;
+      margin: 12px auto 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
     .roadmap-grid {
       max-width: 1000px;
       margin: 0 auto;
@@ -348,6 +451,9 @@
       cursor: pointer;
     }
     button:hover { border-color: var(--muted); }
+    @media (max-width: 700px) {
+      .vital-signs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
   </style>
 </head>
 <body>
@@ -405,18 +511,33 @@
     <div class="exceptions-empty">Loading open tickets…</div>
   </div>
 
+  <div class="section-heading">Business Vital Signs</div>
+  <div class="vital-signs-grid" id="vital-signs-grid">
+    <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
+  </div>
+
+  <details class="drilldown">
+    <summary>Margin by client</summary>
+    <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <details class="drilldown">
+    <summary>Revenue by client &amp; waste type</summary>
+    <table id="revenue-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <details class="drilldown">
+    <summary>Receivables aging</summary>
+    <table id="aging-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables aging is read from Xero via fws-xero-reader — currently reflects Demo Company data until James completes that connection's live-org login.</div>
+
   <div class="section-heading">On the Horizon</div>
   <div class="roadmap-grid">
-    <div class="roadmap-card">
-      <div class="card-top"><h2>📊 Business Analysis</h2><span class="coming-soon-badge">Coming soon</span></div>
-      <p>Revenue &amp; margin health, supplier costs, operational risk signals.</p>
-      <ul>
-        <li>Revenue by client, concentration risk</li>
-        <li>Margin % by client — flag below 15.5%</li>
-        <li>SP costs by supplier, price-variance trends</li>
-        <li>Inactive clients, rising alert trends</li>
-      </ul>
-    </div>
     <div class="roadmap-card">
       <div class="card-top"><h2>🎤 Point of Sale Capture</h2><span class="coming-soon-badge">Coming soon</span></div>
       <p>James leaves a voice note or voicemail with new client/service details.</p>
@@ -520,12 +641,6 @@
       return `${Math.floor(hours / 24)}d ago`;
     }
 
-    // v1.7: renders one exception row. Only kind === "invoice_review"
-    // (a HubSpot invoice held on validation, per exceptions.js v2.1)
-    // gets the "Confirm & Create Xero Draft" button — overdue tickets
-    // and stuck Xero drafts are informational only here, since fixing
-    // those means going into HubSpot/Xero directly, not a HubSpot
-    // numbers-correction step.
     function renderExceptionItem(t) {
       const button = t.kind === 'invoice_review'
         ? `<button class="approve-btn" id="approve-btn-${t.id}" onclick="approveInvoice('${t.id}', this)">Confirm &amp; Create Xero Draft</button>`
@@ -541,12 +656,6 @@
       `;
     }
 
-    // v1.7: calls this project's own approve-invoice.js proxy, NOT
-    // clv-invoice-automation directly — a direct cross-origin call
-    // from this page would hit the same CORS problem already solved
-    // for Agent Health via api/status.js. The proxy forwards
-    // server-side and relays whatever approve.js decides; this
-    // function only reflects that result in the button itself.
     async function approveInvoice(invoiceId, btn) {
       const originalText = btn.textContent;
       btn.disabled = true;
@@ -567,8 +676,6 @@
 
         btn.textContent = `Xero draft ${data.xeroInvoiceId ? 'created' : 'confirmed'} ✓`;
         btn.classList.add('approve-btn-success');
-        // Re-fetch the whole feed shortly after — this item should
-        // drop out entirely now that validation_status is Passed.
         setTimeout(loadExceptions, 2500);
       } catch (err) {
         btn.disabled = false;
@@ -602,6 +709,117 @@
 
     loadExceptions();
     setInterval(loadExceptions, 60000);
+
+    // v1.8: Business Vital Signs
+    function money(n) {
+      return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(n || 0);
+    }
+
+    function setVitalCard(index, label, value, sub, flagClass) {
+      const grid = document.getElementById('vital-signs-grid');
+      const card = grid.children[index];
+      card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
+      card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
+    }
+
+    async function loadVitalSigns() {
+      try {
+        const [marginRes, revenueRes, agingRes] = await Promise.all([
+          fetch('/api/margin-by-client').then(r => r.json()),
+          fetch('/api/revenue-by-client').then(r => r.json()),
+          fetch('/api/ar-aging').then(r => r.json()),
+        ]);
+
+        if (revenueRes.status === 'ok') {
+          setVitalCard(0, 'Revenue, this period', money(revenueRes.totalRevenue), `${revenueRes.clientCount} client${revenueRes.clientCount === 1 ? '' : 's'}`);
+        } else {
+          setVitalCard(0, 'Revenue, this period', '—', 'Could not load');
+        }
+
+        if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
+          const totalRev = marginRes.clients.reduce((s, c) => s + c.revenue, 0);
+          const totalCost = marginRes.clients.reduce((s, c) => s + c.cost, 0);
+          const blendedMargin = totalRev > 0 ? ((totalRev - totalCost) / totalRev) * 100 : null;
+          const belowTarget = blendedMargin !== null && blendedMargin < marginRes.marginTargetPercent;
+          setVitalCard(1, 'Blended margin', blendedMargin !== null ? blendedMargin.toFixed(1) + '%' : '—',
+            belowTarget ? `below ${marginRes.marginTargetPercent}% target` : `target ${marginRes.marginTargetPercent}%`,
+            belowTarget ? 'flagged' : null);
+        } else {
+          setVitalCard(1, 'Blended margin', '—', 'No data this period');
+        }
+
+        if (agingRes.status === 'ok') {
+          const overdue = (agingRes.buckets.overdue_31_60 || 0) + (agingRes.buckets.overdue_61_90 || 0) + (agingRes.buckets.overdue_90_plus || 0);
+          const overduePercent = agingRes.totalOutstanding > 0 ? Math.round((overdue / agingRes.totalOutstanding) * 100) : 0;
+          setVitalCard(2, 'Overdue receivables', money(overdue), `${overduePercent}% of ${money(agingRes.totalOutstanding)} total`,
+            overduePercent > 20 ? 'warning' : null);
+        } else {
+          setVitalCard(2, 'Overdue receivables', '—', 'Could not load');
+        }
+
+        if (revenueRes.status === 'ok' && revenueRes.clients.length > 0) {
+          const top = revenueRes.clients[0];
+          setVitalCard(3, 'Largest client', top.percentOfTotal + '%', `${top.name} of total revenue`,
+            top.concentrationRisk ? 'warning' : null);
+        } else {
+          setVitalCard(3, 'Largest client', '—', 'No data this period');
+        }
+
+        const marginTable = document.getElementById('margin-table');
+        if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
+          marginTable.innerHTML = `
+            <thead><tr><th>Client</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Data quality</th></tr></thead>
+            <tbody>${marginRes.clients.map(c => `
+              <tr class="${c.belowTarget ? 'risk' : ''}">
+                <td>${c.name}</td>
+                <td class="num">${money(c.revenue)}</td>
+                <td class="num">${money(c.cost)}</td>
+                <td class="num">${c.marginPercent !== null ? c.marginPercent + '%' : '—'}</td>
+                <td class="num">${c.costDataCoveragePercent}%</td>
+              </tr>`).join('')}</tbody>`;
+        } else {
+          marginTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No passed invoices this period yet.</td></tr></tbody>';
+        }
+
+        const revenueTable = document.getElementById('revenue-table');
+        if (revenueRes.status === 'ok' && revenueRes.clients.length > 0) {
+          const clientRows = revenueRes.clients.map(c => `
+            <tr class="${c.concentrationRisk ? 'risk' : ''}">
+              <td>${c.name}</td><td class="num">${money(c.revenue)}</td><td class="num">${c.percentOfTotal}%</td>
+            </tr>`).join('');
+          const wasteRows = (revenueRes.revenueByWasteType || []).map(w => `
+            <tr><td>${w.wasteType}</td><td class="num">${money(w.revenue)}</td><td class="num">${w.percentOfTotal}%</td></tr>`).join('');
+          revenueTable.innerHTML = `
+            <thead><tr><th>Client</th><th>Revenue</th><th>% of total</th></tr></thead>
+            <tbody>${clientRows}</tbody>
+            <thead><tr><th colspan="3" style="padding-top:16px">By waste type</th></tr></thead>
+            <tbody>${wasteRows}</tbody>`;
+        } else {
+          revenueTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No passed invoices this period yet.</td></tr></tbody>';
+        }
+
+        const agingTable = document.getElementById('aging-table');
+        if (agingRes.status === 'ok' && agingRes.clients.length > 0) {
+          agingTable.innerHTML = `
+            <thead><tr><th>Client</th><th>Amount due</th><th>% of receivables</th><th>Oldest (days)</th></tr></thead>
+            <tbody>${agingRes.clients.map(c => `
+              <tr class="${c.concentrationRisk ? 'risk' : ''}">
+                <td>${c.name}</td>
+                <td class="num">${money(c.amountDue)}</td>
+                <td class="num">${c.percentOfTotalReceivables}%</td>
+                <td class="num">${c.oldestDaysOverdue}</td>
+              </tr>`).join('')}</tbody>`;
+        } else {
+          agingTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding receivables found.</td></tr></tbody>';
+        }
+
+      } catch (err) {
+        console.error('loadVitalSigns failed:', err);
+      }
+    }
+
+    loadVitalSigns();
+    setInterval(loadVitalSigns, 300000);
   </script>
 </body>
 </html>
