@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.9 — 10 Sept 2026
+     v1.10 — 10 Sept 2026
+     v1.10: ADDED payables side — "Largest supplier (payables)" card
+       and a fourth drill-down (api/ap-aging.js, the payables mirror
+       of ar-aging.js). Grid changed from a fixed 4-column layout to
+       auto-fit so the 5th card wraps gracefully rather than cramming.
+       IMPORTANT CAVEAT, visible in the drill-down itself: supplier
+       names are shown exactly as recorded in Xero, NOT consolidated —
+       John confirmed at least one real supplier (Remondis) is split
+       across several separate Xero contacts, the same fragmentation
+       problem already found on the client side (Urbis: 13 separate
+       HubSpot companies, one per site, no parent record). Real
+       supplier naming patterns haven't been seen yet
+       (fws-xero-reader still on Demo Company) — deliberately not
+       guessing at a consolidation rule before seeing real data.
      v1.9: moved Business Vital Signs (and its drill-downs) to the top
        of the page, right below the header — now the first thing seen,
        ahead of Agent Health, matching John's request that this be the
@@ -310,7 +323,7 @@
       max-width: 1000px;
       margin: 0 auto;
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 12px;
     }
     .vital-card {
@@ -456,9 +469,6 @@
       cursor: pointer;
     }
     button:hover { border-color: var(--muted); }
-    @media (max-width: 700px) {
-      .vital-signs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
   </style>
 </head>
 <body>
@@ -473,6 +483,7 @@
     <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Largest supplier (payables)</p><p class="value">…</p></div>
   </div>
 
   <details class="drilldown">
@@ -490,7 +501,12 @@
     <table id="aging-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
   </details>
 
-  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables aging is read from Xero via fws-xero-reader — currently reflects Demo Company data until James completes that connection's live-org login.</div>
+  <details class="drilldown">
+    <summary>Payables by supplier (aging)</summary>
+    <table id="payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables and payables aging are read from Xero via fws-xero-reader — currently reflect Demo Company data until James completes that connection's live-org login. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now.</div>
 
   <div class="grid" id="agent-grid">
     <div class="card">
@@ -730,10 +746,11 @@
 
     async function loadVitalSigns() {
       try {
-        const [marginRes, revenueRes, agingRes] = await Promise.all([
+        const [marginRes, revenueRes, agingRes, payablesRes] = await Promise.all([
           fetch('/api/margin-by-client').then(r => r.json()),
           fetch('/api/revenue-by-client').then(r => r.json()),
           fetch('/api/ar-aging').then(r => r.json()),
+          fetch('/api/ap-aging').then(r => r.json()),
         ]);
 
         if (revenueRes.status === 'ok') {
@@ -769,6 +786,14 @@
             top.concentrationRisk ? 'warning' : null);
         } else {
           setVitalCard(3, 'Largest client', '—', 'No data this period');
+        }
+
+        if (payablesRes.status === 'ok' && payablesRes.suppliers.length > 0) {
+          const topSupplier = payablesRes.suppliers[0];
+          setVitalCard(4, 'Largest supplier (payables)', money(topSupplier.amountOwing), `${topSupplier.name} — ${topSupplier.percentOfTotalPayables}% of payables`,
+            topSupplier.concentrationNote ? 'warning' : null);
+        } else {
+          setVitalCard(4, 'Largest supplier (payables)', '—', 'Could not load');
         }
 
         const marginTable = document.getElementById('margin-table');
@@ -817,6 +842,26 @@
               </tr>`).join('')}</tbody>`;
         } else {
           agingTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding receivables found.</td></tr></tbody>';
+        }
+
+        // v1.10: payables — deliberately NOT consolidated across
+        // fragmented Xero contacts (e.g. Remondis split across
+        // several accounts) — see api/ap-aging.js for why. Each row
+        // here is exactly one Xero contact, not necessarily one true
+        // supplier.
+        const payablesTable = document.getElementById('payables-table');
+        if (payablesRes.status === 'ok' && payablesRes.suppliers.length > 0) {
+          payablesTable.innerHTML = `
+            <thead><tr><th>Supplier (as recorded in Xero)</th><th>Amount owing</th><th>% of payables</th><th>Oldest (days)</th></tr></thead>
+            <tbody>${payablesRes.suppliers.map(s => `
+              <tr class="${s.concentrationNote ? 'risk' : ''}">
+                <td>${s.name}</td>
+                <td class="num">${money(s.amountOwing)}</td>
+                <td class="num">${s.percentOfTotalPayables}%</td>
+                <td class="num">${s.oldestDaysOverdue}</td>
+              </tr>`).join('')}</tbody>`;
+        } else {
+          payablesTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding payables found.</td></tr></tbody>';
         }
 
       } catch (err) {
