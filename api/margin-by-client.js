@@ -2,7 +2,7 @@
 // FWS Command Center — Margin by Client
 // Deploy as: api/margin-by-client.js
 // ================================================================
-// Version: v1.0
+// Version: v1.1 - surfaces line_items read failures instead of silently hiding them
 //
 // PURPOSE: the first real piece of the "Business Vital Signs" card.
 // Genuine per-client margin, calculated entirely from data already
@@ -97,7 +97,17 @@ async function getLineItemsForInvoice(invoiceId) {
   const assocResp = await fetch(`${HUBSPOT_API_BASE}/crm/v4/objects/invoices/${invoiceId}/associations/line_items`, {
     headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}` },
   });
-  if (!assocResp.ok) return [];
+  // v1.1: FIX — this used to silently return [] on any failure here,
+  // which is exactly what masked a real permissions gap: Command
+  // Center's read-only key was never actually granted scope to read
+  // line_items, so every invoice's line items came back as if they
+  // genuinely had none — revenue and cost both silently showing $0
+  // with no visible error at all. Now surfaces the real HubSpot error
+  // instead of hiding it.
+  if (!assocResp.ok) {
+    const errText = await assocResp.text();
+    throw new Error(`Could not read line_items association for invoice ${invoiceId} (${assocResp.status}): ${errText}`);
+  }
   const assocData = await assocResp.json();
   const lineItemIds = (assocData.results || []).map((r) => r.toObjectId);
   if (lineItemIds.length === 0) return [];
@@ -110,7 +120,10 @@ async function getLineItemsForInvoice(invoiceId) {
       inputs: lineItemIds.map((id) => ({ id })),
     }),
   });
-  if (!batchResp.ok) return [];
+  if (!batchResp.ok) {
+    const errText = await batchResp.text();
+    throw new Error(`Could not batch-read line_items for invoice ${invoiceId} (${batchResp.status}): ${errText}`);
+  }
   const batchData = await batchResp.json();
   return batchData.results || [];
 }
