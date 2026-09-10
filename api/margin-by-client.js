@@ -2,156 +2,53 @@
 // FWS Command Center — Margin by Client
 // Deploy as: api/margin-by-client.js
 // ================================================================
-// Version: v1.1 - surfaces line_items read failures instead of silently hiding them
+// Version: v1.2
 //
-// PURPOSE: the first real piece of the "Business Vital Signs" card.
-// Genuine per-client margin, calculated entirely from data already
-// sitting in HubSpot — no re-parsing supplier PDFs, no Xero needed at
-// all — thanks to webhook.js v5.5.65Agent now persisting the real
+// PURPOSE: genuine per-client margin, calculated entirely from data
+// already sitting in HubSpot — no re-parsing supplier PDFs, no Xero
+// needed — thanks to webhook.js v5.5.65Agent persisting the real
 // supplier cost onto each line item's native hs_cost_of_goods_sold
 // field, alongside the client price that was already there.
 //
 // Margin per client = (sum of client prices - sum of supplier costs)
 //                      / sum of client prices
 //
-// Only counts invoices with validation_status = "Passed" — anything
-// still "Needs Review" hasn't been confirmed correct yet and shouldn't
-// count toward a real margin figure.
+// Only counts invoices with validation_status = "Passed". Confirmed
+// working against a real invoice (CLV UNSW Kensington, 10 Sept 2026):
+// revenue and cost matched the real Xero draft and Veryfi logs
+// exactly, margin calculated correctly, belowTarget flag fired
+// correctly.
 //
-// NOTE: this only reflects invoices created SINCE webhook.js
-// v5.5.65Agent went live (9 Sept 2026) — older line items were never
-// given a cost_of_goods_sold value, so early results will be thin
-// until real invoice history accumulates.
+// v1.1: fixed a silent failure that was masking a real permissions
+// gap (Command Center's HubSpot key was missing line_items read
+// scope) — errors now surface instead of quietly returning zeros.
+// v1.2: refactored to use the shared lib/hubspotInvoiceData.js module
+// instead of duplicating invoice/line-item fetching logic, now that
+// revenue-by-client.js needs the exact same underlying data.
 //
 // Usage: GET /api/margin-by-client?from=2026-09-01&to=2026-09-30
 // Defaults to the start of the current calendar month through now.
 // ================================================================
 
-const HUBSPOT_SERVICE_KEY = process.env.HUBSPOT_SERVICE_KEY;
-const HUBSPOT_API_BASE = 'https://api.hubapi.com';
-const PORTAL_ID = '441953864';
+import { fetchPassedInvoices, getClientCompany, getLineItemsForInvoice, resolvePeriod } from '../lib/hubspotInvoiceData.js';
 
-// Same 15.5% minimum markup already used throughout the invoice
-// automation — a client sitting below this is a genuine flag.
 const MARGIN_TARGET_PERCENT = 15.5;
 
-async function hubspotPost(path, body) {
-  const resp = await fetch(`${HUBSPOT_API_BASE}${path}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`HubSpot API error (${resp.status}): ${errText}`);
-  }
-  return resp.json();
-}
-
-async function fetchPassedInvoices(fromMs, toMs) {
-  const results = [];
-  let after = undefined;
-  for (let page = 0; page < 20; page++) {
-    const data = await hubspotPost('/crm/v3/objects/0-53/search', {
-      limit: 100,
-      after,
-      properties: ['hs_title', 'validation_status', 'hs_createdate'],
-      filterGroups: [{
-        filters: [
-          { propertyName: 'validation_status', operator: 'EQ', value: 'Passed' },
-          { propertyName: 'hs_createdate', operator: 'GTE', value: String(fromMs) },
-          { propertyName: 'hs_createdate', operator: 'LTE', value: String(toMs) },
-        ],
-      }],
-    });
-    results.push(...(data.results || []));
-    after = data.paging?.next?.after;
-    if (!after) break;
-  }
-  return results;
-}
-
-async function getAssociatedCompanies(invoiceId) {
-  const resp = await fetch(`${HUBSPOT_API_BASE}/crm/v4/objects/invoices/${invoiceId}/associations/companies`, {
-    headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}` },
-  });
-  if (!resp.ok) return [];
-  const data = await resp.json();
-  return data.results || [];
-}
-
-async function getCompanyName(companyId, companyNameCache) {
-  if (companyNameCache.has(companyId)) return companyNameCache.get(companyId);
-  const resp = await fetch(`${HUBSPOT_API_BASE}/crm/v3/objects/companies/${companyId}?properties=name,type`, {
-    headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}` },
-  });
-  if (!resp.ok) return null;
-  const data = await resp.json();
-  const type = (data.properties.type || '').toLowerCase();
-  const result = type.includes('client') ? { id: companyId, name: data.properties.name } : null;
-  companyNameCache.set(companyId, result);
-  return result;
-}
-
-async function getLineItemsForInvoice(invoiceId) {
-  const assocResp = await fetch(`${HUBSPOT_API_BASE}/crm/v4/objects/invoices/${invoiceId}/associations/line_items`, {
-    headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}` },
-  });
-  // v1.1: FIX — this used to silently return [] on any failure here,
-  // which is exactly what masked a real permissions gap: Command
-  // Center's read-only key was never actually granted scope to read
-  // line_items, so every invoice's line items came back as if they
-  // genuinely had none — revenue and cost both silently showing $0
-  // with no visible error at all. Now surfaces the real HubSpot error
-  // instead of hiding it.
-  if (!assocResp.ok) {
-    const errText = await assocResp.text();
-    throw new Error(`Could not read line_items association for invoice ${invoiceId} (${assocResp.status}): ${errText}`);
-  }
-  const assocData = await assocResp.json();
-  const lineItemIds = (assocData.results || []).map((r) => r.toObjectId);
-  if (lineItemIds.length === 0) return [];
-
-  const batchResp = await fetch(`${HUBSPOT_API_BASE}/crm/v3/objects/line_items/batch/read`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      properties: ['quantity', 'price', 'hs_cost_of_goods_sold'],
-      inputs: lineItemIds.map((id) => ({ id })),
-    }),
-  });
-  if (!batchResp.ok) {
-    const errText = await batchResp.text();
-    throw new Error(`Could not batch-read line_items for invoice ${invoiceId} (${batchResp.status}): ${errText}`);
-  }
-  const batchData = await batchResp.json();
-  return batchData.results || [];
-}
-
 export default async function handler(req, res) {
-  if (!HUBSPOT_SERVICE_KEY) {
+  if (!process.env.HUBSPOT_SERVICE_KEY) {
     return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
   }
 
   try {
-    const now = new Date();
-    const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1);
-    const fromMs = req.query?.from ? new Date(req.query.from).getTime() : defaultFrom.getTime();
-    const toMs = req.query?.to ? new Date(req.query.to).getTime() : now.getTime();
-
+    const { fromMs, toMs } = resolvePeriod(req.query);
     const invoices = await fetchPassedInvoices(fromMs, toMs);
 
     const companyNameCache = new Map();
-    const byClient = new Map(); // clientId -> { name, revenue, cost, invoiceCount, lineItemsWithCost, lineItemsTotal }
+    const byClient = new Map();
 
     for (const invoice of invoices) {
-      const companies = await getAssociatedCompanies(invoice.id);
-      let client = null;
-      for (const c of companies) {
-        const found = await getCompanyName(c.toObjectId, companyNameCache);
-        if (found) { client = found; break; }
-      }
-      if (!client) continue; // no client company found — skip, don't guess
+      const client = await getClientCompany(invoice.id, companyNameCache);
+      if (!client) continue;
 
       const lineItems = await getLineItemsForInvoice(invoice.id);
       if (!byClient.has(client.id)) {
@@ -182,9 +79,6 @@ export default async function handler(req, res) {
         marginPercent: marginPercent !== null ? Math.round(marginPercent * 10) / 10 : null,
         belowTarget: marginPercent !== null ? marginPercent < MARGIN_TARGET_PERCENT : null,
         invoiceCount: c.invoiceCount,
-        // Flags when older line items (pre-v5.5.65Agent, no cost data)
-        // are diluting this client's figure — a low coverage % means
-        // "trust this number less, not enough real cost data yet".
         costDataCoveragePercent: c.lineItemsTotal > 0 ? Math.round((c.lineItemsWithCost / c.lineItemsTotal) * 1000) / 10 : 0,
       };
     }).sort((a, b) => (a.marginPercent ?? 999) - (b.marginPercent ?? 999));
