@@ -1,6 +1,10 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.8 — 10 Sept 2026
+     v1.9 — 10 Sept 2026
+     v1.9: moved Business Vital Signs (and its drill-downs) to the top
+       of the page, right below the header — now the first thing seen,
+       ahead of Agent Health, matching John's request that this be the
+       primary view. Centered the header title/subtitle.
      v1.8: ADDED Business Vital Signs section — the real thing, not a
        placeholder. Four glance-level metric cards (Revenue, Blended
        Margin, AR Overdue, Concentration Risk) fed by three new
@@ -76,6 +80,7 @@
     header {
       max-width: 1000px;
       margin: 0 auto 32px;
+      text-align: center;
     }
     header h1 {
       font-size: 1.6rem;
@@ -462,6 +467,31 @@
     <p>Agent Health — live status of all automation systems</p>
   </header>
 
+  <div class="section-heading">Business Vital Signs</div>
+  <div class="vital-signs-grid" id="vital-signs-grid">
+    <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
+  </div>
+
+  <details class="drilldown">
+    <summary>Margin by client</summary>
+    <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <details class="drilldown">
+    <summary>Revenue by client &amp; waste type</summary>
+    <table id="revenue-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <details class="drilldown">
+    <summary>Receivables aging</summary>
+    <table id="aging-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables aging is read from Xero via fws-xero-reader — currently reflects Demo Company data until James completes that connection's live-org login.</div>
+
   <div class="grid" id="agent-grid">
     <div class="card">
       <div class="card-top"><h2>Loading agents...</h2><div class="dot loading"></div></div>
@@ -511,30 +541,6 @@
     <div class="exceptions-empty">Loading open tickets…</div>
   </div>
 
-  <div class="section-heading">Business Vital Signs</div>
-  <div class="vital-signs-grid" id="vital-signs-grid">
-    <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
-    <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
-    <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
-    <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
-  </div>
-
-  <details class="drilldown">
-    <summary>Margin by client</summary>
-    <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <details class="drilldown">
-    <summary>Revenue by client &amp; waste type</summary>
-    <table id="revenue-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <details class="drilldown">
-    <summary>Receivables aging</summary>
-    <table id="aging-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables aging is read from Xero via fws-xero-reader — currently reflects Demo Company data until James completes that connection's live-org login.</div>
 
   <div class="section-heading">On the Horizon</div>
   <div class="roadmap-grid">
