@@ -1,6 +1,13 @@
 // FWS Command Center — Agent Status Checker
-// v1.1 — 17 Aug 2026
-// v1.1: added manualNote field (hand-set, not live-detected) so paused
+// v1.2 — 12 Sept 2026
+// v1.2: Agent 1 re-enabled (mailbox subscription live again, filename-
+//   signal classifier fix deployed v1.8, renewal cron confirmed working)
+//   — cleared its manualNote back to null. This field is still hand-set,
+//   not live-detected (the health-check URL itself can't tell whether
+//   Agent 1's subscription actually exists or not), so it needs the same
+//   manual update whenever a genuinely paused sub-system changes state.
+//   Enrichment Agent's note left untouched — still paused by John.
+// v1.1 — added manualNote field (hand-set, not live-detected) so paused
 //   sub-systems (Agent 1, Enrichment Agent) show clearly even though the
 //   parent endpoint still reports "ok". Also cleaned up version string
 //   parsing — some agents pack extra description text into the version
@@ -19,7 +26,7 @@ const AGENTS = [
     id: "hubspot-agent",
     name: "HubSpot Agent (2 & 3)",
     url: "https://fws-hubspot-agent-a4be.vercel.app/api/webhook",
-    manualNote: "Agent 1 (mailbox intake): Paused",
+    manualNote: null,
   },
   {
     id: "enrichment-agent",
