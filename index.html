@@ -1,6 +1,23 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.10 — 10 Sept 2026
+     v1.11 — 12 Sept 2026
+     v1.11: ADDED "Invoices Awaiting Approval" card — a live count of
+       every Xero invoice still sitting in DRAFT (not yet reviewed/
+       authorised by James), fed by the new api/awaiting-approval.js.
+       Deliberately styled with the existing amber "warning" look
+       (same colour as the Rate Card section) at John's request — this
+       card stays yellow/amber unconditionally, not just when
+       something crosses the stuck threshold, since it's meant to read
+       as "needs approval attention" as a category, same visual
+       language as Rate Card's "needs pricing access" tiles. The stuck
+       count/oldest-days sub-line still updates live underneath. Sixth
+       drill-down added (awaiting-approval-table) listing every Draft
+       invoice, oldest-first, with anything past the same 3-business-
+       day threshold used by clv-invoice-automation's existing
+       xero-draft-check.js alert highlighted the same way overdue
+       receivables/payables rows already are (shared .risk row style)
+       — so the dashboard card and the alert email can never disagree
+       about what counts as "stuck".
      v1.10: ADDED payables side — "Largest supplier (payables)" card
        and a fourth drill-down (api/ap-aging.js, the payables mirror
        of ar-aging.js). Grid changed from a fixed 4-column layout to
@@ -484,6 +501,7 @@
     <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Largest supplier (payables)</p><p class="value">…</p></div>
+    <div class="vital-card warning"><p class="label">Invoices awaiting approval</p><p class="value">…</p></div>
   </div>
 
   <details class="drilldown">
@@ -506,7 +524,12 @@
     <table id="payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
   </details>
 
-  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables and payables aging are read from Xero via fws-xero-reader — currently reflect Demo Company data until James completes that connection's live-org login. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now.</div>
+  <details class="drilldown">
+    <summary>Invoices awaiting approval</summary>
+    <table id="awaiting-approval-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+  </details>
+
+  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
 
   <div class="grid" id="agent-grid">
     <div class="card">
@@ -740,17 +763,23 @@
     function setVitalCard(index, label, value, sub, flagClass) {
       const grid = document.getElementById('vital-signs-grid');
       const card = grid.children[index];
-      card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
+      // v1.11: the "Invoices awaiting approval" card (index 5) always
+      // keeps its yellow "warning" styling regardless of flagClass —
+      // it's meant to read as a category, same as Rate Card's amber
+      // tiles, not just an alarm when something's overdue.
+      const isAwaitingApprovalCard = index === 5;
+      card.className = 'vital-card' + (isAwaitingApprovalCard ? ' warning' : (flagClass ? ' ' + flagClass : ''));
       card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
     }
 
     async function loadVitalSigns() {
       try {
-        const [marginRes, revenueRes, agingRes, payablesRes] = await Promise.all([
+        const [marginRes, revenueRes, agingRes, payablesRes, awaitingRes] = await Promise.all([
           fetch('/api/margin-by-client').then(r => r.json()),
           fetch('/api/revenue-by-client').then(r => r.json()),
           fetch('/api/ar-aging').then(r => r.json()),
           fetch('/api/ap-aging').then(r => r.json()),
+          fetch('/api/awaiting-approval').then(r => r.json()),
         ]);
 
         if (revenueRes.status === 'ok') {
@@ -794,6 +823,18 @@
             topSupplier.concentrationNote ? 'warning' : null);
         } else {
           setVitalCard(4, 'Largest supplier (payables)', '—', 'Could not load');
+        }
+
+        // v1.11: Invoices awaiting approval — always yellow (see
+        // setVitalCard's special-case for index 5), sub-line shows
+        // how many of those are actually past the stuck threshold.
+        if (awaitingRes.status === 'ok') {
+          const stuckNote = awaitingRes.stuckCount > 0
+            ? `${awaitingRes.stuckCount} stuck ${awaitingRes.stuckCount === 1 ? 'invoice' : 'invoices'} (${awaitingRes.stuckThresholdBusinessDays}+ business days)`
+            : `none over ${awaitingRes.stuckThresholdBusinessDays} business days yet`;
+          setVitalCard(5, 'Invoices awaiting approval', awaitingRes.totalCount, stuckNote);
+        } else {
+          setVitalCard(5, 'Invoices awaiting approval', '—', 'Could not load');
         }
 
         const marginTable = document.getElementById('margin-table');
@@ -862,6 +903,26 @@
               </tr>`).join('')}</tbody>`;
         } else {
           payablesTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding payables found.</td></tr></tbody>';
+        }
+
+        // v1.11: awaiting approval — oldest-first (already sorted
+        // server-side), stuck rows (past the 3-business-day threshold)
+        // highlighted with the same shared .risk row style used
+        // elsewhere, so a stuck invoice reads the same way no matter
+        // which drill-down it's in.
+        const awaitingTable = document.getElementById('awaiting-approval-table');
+        if (awaitingRes.status === 'ok' && awaitingRes.items.length > 0) {
+          awaitingTable.innerHTML = `
+            <thead><tr><th>Invoice</th><th>Client</th><th>Total</th><th>Business days waiting</th></tr></thead>
+            <tbody>${awaitingRes.items.map(i => `
+              <tr class="${i.stuck ? 'risk' : ''}">
+                <td>${i.invoiceNumber || '—'}</td>
+                <td>${i.client}</td>
+                <td class="num">${money(i.total)}</td>
+                <td class="num">${i.businessDaysWaiting}</td>
+              </tr>`).join('')}</tbody>`;
+        } else {
+          awaitingTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Nothing sitting in Draft right now.</td></tr></tbody>';
         }
 
       } catch (err) {
