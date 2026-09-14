@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.15 — 14 Sept 2026
+     v1.16 — 14 Sept 2026
+     v1.16: Added the FWS logo to the header. It's a white-background
+       JPEG, so it sits inside a small white rounded card rather than
+       going directly on the dark background — otherwise it would look
+       like a rendering glitch, not a logo. Expects a file at
+       /logo.jpg in the repo root (uploaded separately by John, since
+       binary files can't be pasted as text).
      v1.15: Added a whole-site login system (login.html, api/login.js,
        api/logout.js, api/whoami.js) at John's request — the whole
        Command Centre displays sensitive business data (revenue,
@@ -153,6 +159,17 @@
       max-width: 1000px;
       margin: 0 auto 32px;
       text-align: center;
+    }
+    .logo-wrap {
+      display: inline-block;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 10px 20px;
+      margin-bottom: 14px;
+    }
+    .logo-wrap img {
+      height: 40px;
+      display: block;
     }
     header h1 {
       font-size: 1.6rem;
@@ -564,6 +581,7 @@
 </head>
 <body>
   <header>
+    <div class="logo-wrap"><img src="/logo.jpg" alt="Future Waste Solutions" /></div>
     <h1>FWS Command Center</h1>
     <p>Agent Health — live status of all automation systems</p>
     <p style="margin-top:8px;"><a href="/api/logout" style="color: var(--muted); font-size: 0.8rem;">Log out</a></p>
