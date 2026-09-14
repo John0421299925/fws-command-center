@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.11 — 12 Sept 2026
+     v1.12 — 14 Sept 2026
+     v1.12: The Auto Quotation Agent's Command Centre screen
+       (quote-approvals.html) is now live — comparison table, SP
+       dropdown, one-click generate/attach/file. Removed "Automated
+       Quotations" from the "On the Horizon" roadmap (it's no longer
+       a future idea) and gave it a real section instead: a single
+       bright fluorescent-green tile (John's explicit request — this
+       is a new colour in the palette, distinct from Rate Card's amber
+       and Exceptions' red, deliberately eye-catching to flag "new and
+       live") linking straight to quote-approvals.html.
      v1.11: ADDED "Invoices Awaiting Approval" card — a live count of
        every Xero invoice still sitting in DRAFT (not yet reviewed/
        authorised by James), fed by the new api/awaiting-approval.js.
@@ -97,6 +106,7 @@
       --ok: #22c55e;
       --error: #ef4444;
       --unknown: #f59e0b;
+      --quote-green: #39ff14;
     }
     * { box-sizing: border-box; }
     body {
@@ -257,6 +267,53 @@
     .rate-card-tile .desc {
       font-size: 0.78rem;
       color: var(--muted);
+    }
+    /* v1.12: Quotations — deliberately its own colour (bright green),
+       distinct from Rate Card's amber and Exceptions' red, so it
+       reads as "new and live" rather than blending into either
+       existing category. */
+    .quote-tile {
+      background: var(--card-bg);
+      border: 1px solid var(--quote-green);
+      box-shadow: 0 0 12px rgba(57,255,20,0.35);
+      border-radius: 12px;
+      padding: 18px 16px;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      transition: box-shadow 0.15s ease;
+    }
+    .quote-tile:hover {
+      box-shadow: 0 0 18px rgba(57,255,20,0.55);
+    }
+    .quote-tile .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    .quote-tile .title-row .name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .quote-tile .desc {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .live-badge {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(57,255,20,0.15);
+      color: var(--quote-green);
+      white-space: nowrap;
     }
     .exceptions-list {
       max-width: 1000px;
@@ -575,6 +632,17 @@
     </a>
   </div>
 
+  <div class="section-heading">Quotations</div>
+  <div class="launcher-grid">
+    <a class="quote-tile" href="/quote-approvals.html">
+      <div class="title-row">
+        <span class="name">💷 Quote Approvals</span>
+        <span class="live-badge">Live</span>
+      </div>
+      <div class="desc">Review supplier price comparisons, pick a winner, generate &amp; file the client quote</div>
+    </a>
+  </div>
+
   <div class="section-heading" id="exceptions-heading">Exceptions &amp; Alerts</div>
   <div class="exceptions-list" id="exceptions-list">
     <div class="exceptions-empty">Loading open tickets…</div>
@@ -590,15 +658,6 @@
         <li>Voice → draft Company + Services record</li>
         <li>One-click confirm by James or Christine</li>
         <li>Capture mechanism to be chosen by James</li>
-      </ul>
-    </div>
-    <div class="roadmap-card">
-      <div class="card-top"><h2>💷 Automated Quotations</h2><span class="coming-soon-badge">Coming soon</span></div>
-      <p>Draft client quotes drawn straight from the rate card.</p>
-      <ul>
-        <li>Pulls pricing from p_services rate card</li>
-        <li>Draft-then-confirm before sending</li>
-        <li>Not yet scoped in detail</li>
       </ul>
     </div>
     <div class="roadmap-card">
