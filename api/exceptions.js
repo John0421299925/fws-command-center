@@ -1,5 +1,10 @@
 // FWS Command Center — Exceptions & Alerts Feed
-// v2.1 — 7 Sept 2026
+// v2.2 — 14 Sept 2026
+// v2.2: Added the site-wide session-cookie check (see login.js /
+//   whoami.js in the project root) — this endpoint returns real
+//   invoice/ticket details, so it must reject unauthenticated
+//   requests directly, not just rely on the dashboard page being
+//   behind a login screen.
 // v2.1: ADDED a third genuine exception source, alongside the existing
 //   two — invoices flagged xero_draft_stuck = true by the new
 //   xero-draft-check.js cron (in the fws-invoice-automation project).
@@ -23,10 +28,25 @@
 //        that sat in Xero too long without completing.
 // v1.x: showed ALL open tickets — too noisy, superseded by v2.0.
 
+import crypto from 'crypto';
+
 const HUBSPOT_SERVICE_KEY = process.env.HUBSPOT_SERVICE_KEY;
 const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 const PORTAL_ID = '441953864';
 const OVERDUE_STAGE_ID = '3506368961';
+
+function isAuthenticated(req) {
+  const cookieHeader = req.headers.cookie || '';
+  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
+  if (!match) return false;
+  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
+  const expiry = Number(expiryStr);
+  if (!expiry || Date.now() > expiry) return false;
+  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
+  const sigBuf = Buffer.from(signature || '');
+  const expBuf = Buffer.from(expected);
+  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+}
 
 async function hubspotPost(path, body) {
   const resp = await fetch(`${HUBSPOT_API_BASE}${path}`, {
@@ -106,6 +126,10 @@ async function getStuckXeroDrafts() {
 }
 
 export default async function handler(req, res) {
+  if (!isAuthenticated(req)) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+
   if (!HUBSPOT_SERVICE_KEY) {
     return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
   }
