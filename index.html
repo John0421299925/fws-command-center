@@ -1,6 +1,18 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.14 — 14 Sept 2026
+     v1.15 — 14 Sept 2026
+     v1.15: Added a whole-site login system (login.html, api/login.js,
+       api/logout.js, api/whoami.js) at John's request — the whole
+       Command Centre displays sensitive business data (revenue,
+       margin, client names, quote pricing), not just the Rate Card
+       write-access tools, so it needs its own gate rather than relying
+       on individual tools being locked. This page now checks
+       api/whoami on load and redirects to /login.html if there's no
+       valid session — but the REAL protection is that every
+       api/*.js file that returns real data checks the same session
+       cookie itself before responding, so the data is protected even
+       if someone loads this page's HTML directly without running its
+       JS. Added a small "Log out" link in the header.
      v1.14: "Invoices awaiting approval" switched from the shared
        amber "warning" styling to its own bright fluorescent yellow
        (John's request), matching the glow treatment already given to
@@ -554,6 +566,7 @@
   <header>
     <h1>FWS Command Center</h1>
     <p>Agent Health — live status of all automation systems</p>
+    <p style="margin-top:8px;"><a href="/api/logout" style="color: var(--muted); font-size: 0.8rem;">Log out</a></p>
   </header>
 
   <div class="section-heading">Business Vital Signs</div>
@@ -676,6 +689,24 @@
   </div>
 
   <script>
+    // v1.15: check login before anything else runs. If there's no
+    // valid session, bounce to the login page rather than showing a
+    // shell full of permanently-loading placeholders. This is a UX
+    // convenience — the real protection is server-side on every
+    // api/*.js endpoint.
+    (async function checkAuth() {
+      try {
+        const resp = await fetch('/api/whoami');
+        if (resp.status === 401) {
+          window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname);
+        }
+      } catch (err) {
+        // If the check itself fails, let the page continue rather than
+        // trap the person on a broken redirect loop — the individual
+        // data calls will still fail safely with 401s.
+      }
+    })();
+
     async function loadStatus() {
       const grid = document.getElementById('agent-grid');
       const lastChecked = document.getElementById('last-checked');
