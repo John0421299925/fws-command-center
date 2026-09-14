@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Quote Approvals
-  Version: v1.0
+  Version: v1.1
 
   Lists quotation tickets ready for review (all SPs replied), and lets
   you open one to see the price comparison, pick a winner, and
@@ -9,6 +9,11 @@
   own proxy endpoints (quotes-pending.js, quote-comparison.js,
   approve-quote.js), which in turn talk to the Auto Quotation Agent —
   the browser never calls that other Vercel project directly.
+
+  v1.0 - Initial build.
+  v1.1 - Fixed "Invalid Date" on the pending-quotes list: HubSpot
+         returns hs_lastmodifieddate as an ISO date string, not epoch
+         milliseconds, so fmtDate() was parsing it wrong.
 -->
 <html lang="en">
 <head>
