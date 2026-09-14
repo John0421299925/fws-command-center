@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.12 — 14 Sept 2026
+     v1.13 — 14 Sept 2026
+     v1.13: Moved Quotations out of its own standalone section (added
+       one version ago) into Business Vital Signs instead, at John's
+       request — sits right next to "Invoices awaiting approval" as a
+       7th glance-level card rather than a separate launcher-style
+       tile. Now shows a real live count (fed by the existing
+       api/quotes-pending.js, already used by quote-approvals.html)
+       instead of just being a static link. Kept the bright
+       fluorescent-green styling and stays green unconditionally, same
+       pattern as "Invoices awaiting approval" staying amber
+       unconditionally — both read as categories, not alarms. The
+       whole card is a clickable link straight to quote-approvals.html.
      v1.12: The Auto Quotation Agent's Command Centre screen
        (quote-approvals.html) is now live — comparison table, SP
        dropdown, one-click generate/attach/file. Removed "Automated
@@ -268,53 +279,25 @@
       font-size: 0.78rem;
       color: var(--muted);
     }
-    /* v1.12: Quotations — deliberately its own colour (bright green),
-       distinct from Rate Card's amber and Exceptions' red, so it
-       reads as "new and live" rather than blending into either
-       existing category. */
-    .quote-tile {
-      background: var(--card-bg);
-      border: 1px solid var(--quote-green);
-      box-shadow: 0 0 12px rgba(57,255,20,0.35);
-      border-radius: 12px;
-      padding: 18px 16px;
+    /* v1.13: Quotations vital-sign card — deliberately its own colour
+       (bright green), distinct from Rate Card's amber and Exceptions'
+       red, so it reads as "new and live". Stays green unconditionally,
+       same pattern as the amber "Invoices awaiting approval" card —
+       both are categories, not alarms. */
+    a.vital-card.quote-vital {
+      display: block;
       text-decoration: none;
       color: var(--text);
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+      border: 1px solid var(--quote-green);
+      box-shadow: 0 0 12px rgba(57,255,20,0.35);
       transition: box-shadow 0.15s ease;
     }
-    .quote-tile:hover {
+    a.vital-card.quote-vital:hover {
       box-shadow: 0 0 18px rgba(57,255,20,0.55);
     }
-    .quote-tile .title-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      font-weight: 500;
-      font-size: 0.95rem;
-    }
-    .quote-tile .title-row .name {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .quote-tile .desc {
-      font-size: 0.78rem;
-      color: var(--muted);
-    }
-    .live-badge {
-      font-size: 0.68rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 2px 8px;
-      border-radius: 6px;
-      background: rgba(57,255,20,0.15);
-      color: var(--quote-green);
-      white-space: nowrap;
-    }
+    .vital-card.quote-vital .label { color: var(--quote-green); }
+    .vital-card.quote-vital .value { color: var(--quote-green); }
+    .vital-card.quote-vital .sub { color: var(--quote-green); }
     .exceptions-list {
       max-width: 1000px;
       margin: 0 auto;
@@ -559,6 +542,7 @@
     <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Largest supplier (payables)</p><p class="value">…</p></div>
     <div class="vital-card warning"><p class="label">Invoices awaiting approval</p><p class="value">…</p></div>
+    <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
   </div>
 
   <details class="drilldown">
@@ -629,17 +613,6 @@
     <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-admin.html" target="_blank" rel="noopener">
       <div class="title-row">📋 Rate Card Admin Tool</div>
       <div class="desc">Browse &amp; edit, new service, bulk import/export</div>
-    </a>
-  </div>
-
-  <div class="section-heading">Quotations</div>
-  <div class="launcher-grid">
-    <a class="quote-tile" href="/quote-approvals.html">
-      <div class="title-row">
-        <span class="name">💷 Quote Approvals</span>
-        <span class="live-badge">Live</span>
-      </div>
-      <div class="desc">Review supplier price comparisons, pick a winner, generate &amp; file the client quote</div>
     </a>
   </div>
 
@@ -826,19 +799,29 @@
       // keeps its yellow "warning" styling regardless of flagClass —
       // it's meant to read as a category, same as Rate Card's amber
       // tiles, not just an alarm when something's overdue.
+      // v1.13: same pattern for "Quotes awaiting approval" (index 6),
+      // which always stays green. Both are anchor elements (clickable
+      // links), so we only ever touch className/innerHTML — never
+      // replace the element itself, which would lose the href.
       const isAwaitingApprovalCard = index === 5;
-      card.className = 'vital-card' + (isAwaitingApprovalCard ? ' warning' : (flagClass ? ' ' + flagClass : ''));
+      const isQuoteCard = index === 6;
+      if (isQuoteCard) {
+        card.className = 'vital-card quote-vital';
+      } else {
+        card.className = 'vital-card' + (isAwaitingApprovalCard ? ' warning' : (flagClass ? ' ' + flagClass : ''));
+      }
       card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
     }
 
     async function loadVitalSigns() {
       try {
-        const [marginRes, revenueRes, agingRes, payablesRes, awaitingRes] = await Promise.all([
+        const [marginRes, revenueRes, agingRes, payablesRes, awaitingRes, quotesRes] = await Promise.all([
           fetch('/api/margin-by-client').then(r => r.json()),
           fetch('/api/revenue-by-client').then(r => r.json()),
           fetch('/api/ar-aging').then(r => r.json()),
           fetch('/api/ap-aging').then(r => r.json()),
           fetch('/api/awaiting-approval').then(r => r.json()),
+          fetch('/api/quotes-pending').then(r => r.json()),
         ]);
 
         if (revenueRes.status === 'ok') {
@@ -894,6 +877,16 @@
           setVitalCard(5, 'Invoices awaiting approval', awaitingRes.totalCount, stuckNote);
         } else {
           setVitalCard(5, 'Invoices awaiting approval', '—', 'Could not load');
+        }
+
+        // v1.13: Quotes awaiting approval — count of tickets with all
+        // SP replies in, ready for a winner to be picked. Click-through
+        // to quote-approvals.html to actually review and approve.
+        if (quotesRes.status === 'ok') {
+          const count = quotesRes.quotes.length;
+          setVitalCard(6, 'Quotes awaiting approval', count, count > 0 ? 'Click to review' : 'All caught up');
+        } else {
+          setVitalCard(6, 'Quotes awaiting approval', '—', 'Could not load');
         }
 
         const marginTable = document.getElementById('margin-table');
