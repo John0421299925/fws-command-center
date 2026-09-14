@@ -2,7 +2,13 @@
 // FWS Command Center — Revenue by Client
 // Deploy as: api/revenue-by-client.js
 // ================================================================
-// Version: v1.0
+// Version: v1.1
+//
+// v1.1: Added the site-wide session-cookie check (see login.js /
+// whoami.js in the project root) — this endpoint returns real
+// client-level revenue data, so it must reject unauthenticated
+// requests directly, not just rely on the dashboard page being
+// behind a login screen.
 //
 // PURPOSE: the second piece of the "Business Vital Signs" card —
 // revenue per client, sorted highest first, plus each client's share
@@ -20,13 +26,31 @@
 // Defaults to the start of the current calendar month through now.
 // ================================================================
 
+import crypto from 'crypto';
 import { fetchPassedInvoices, getClientCompany, getLineItemsForInvoice, resolvePeriod } from '../lib/hubspotInvoiceData.js';
 
 // Multiple independent sources agree: a single client above ~20-25%
 // of total revenue is where real concentration exposure begins.
 const CONCENTRATION_RISK_THRESHOLD_PERCENT = 20;
 
+function isAuthenticated(req) {
+  const cookieHeader = req.headers.cookie || '';
+  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
+  if (!match) return false;
+  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
+  const expiry = Number(expiryStr);
+  if (!expiry || Date.now() > expiry) return false;
+  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
+  const sigBuf = Buffer.from(signature || '');
+  const expBuf = Buffer.from(expected);
+  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+}
+
 export default async function handler(req, res) {
+  if (!isAuthenticated(req)) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+
   if (!process.env.HUBSPOT_SERVICE_KEY) {
     return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
   }
