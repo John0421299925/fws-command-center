@@ -270,7 +270,8 @@
 
   function fmtDate(iso) {
     if (!iso) return "";
-    const d = new Date(Number(iso));
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
     return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
   }
 
