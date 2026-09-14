@@ -1,35 +1,465 @@
-// FWS Command Centre — Approve & Generate Quote Proxy
-// Version: v1.0
-//
-// Server-side proxy to the Auto Quotation Agent's
-// approve_and_generate_quote endpoint — the single button that both
-// generates the client quote and counts as approval. POST because
-// this is a state-changing action (generates files, attaches to
-// HubSpot, sends an email), even though the underlying agent endpoint
-// itself is a GET.
+<!DOCTYPE html>
+<!--
+  FWS Command Centre — Quote Approvals
+  Version: v1.2
 
-const AUTO_QUOTATION_AGENT_BASE = "https://fws-auto-quotation-agent.vercel.app";
+  Lists quotation tickets ready for review (all SPs replied), and lets
+  you open one to see the price comparison, pick a winner, and
+  generate + file the client quote in one click. Calls this project's
+  own proxy endpoints (quotes-pending.js, quote-comparison.js,
+  approve-quote.js), which in turn talk to the Auto Quotation Agent —
+  the browser never calls that other Vercel project directly.
 
-module.exports = async (req, res) => {
-  if (req.method !== "POST") {
-    res.status(405).json({ status: "error", error: "Use POST" });
-    return;
+  v1.0 - Initial build.
+  v1.1 - Fixed "Invalid Date" on the pending-quotes list: HubSpot
+         returns hs_lastmodifieddate as an ISO date string, not epoch
+         milliseconds, so fmtDate() was parsing it wrong.
+  v1.2 - Added the same site-wide login check as index.html: redirects
+         to /login.html if there's no valid session. Real protection
+         is server-side (quotes-pending.js, quote-comparison.js and
+         approve-quote.js all now check the session cookie themselves).
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Quote Approvals — FWS Command Centre</title>
+<style>
+  :root {
+    --ink: #1c1917;
+    --ink-soft: #57534e;
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --amber: #b45309;
+    --amber-bg: #fffbeb;
+    --amber-border: #fcd34d;
+    --red: #b91c1c;
+    --red-bg: #fef2f2;
+    --green: #15803d;
   }
 
-  const { ticket_id, company } = req.body || {};
-  if (!ticket_id || !company) {
-    res.status(400).json({ status: "error", error: "ticket_id and company are required" });
-    return;
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.5;
   }
 
-  try {
-    const url =
-      `${AUTO_QUOTATION_AGENT_BASE}/api/approve_and_generate_quote` +
-      `?ticket_id=${encodeURIComponent(ticket_id)}&company=${encodeURIComponent(company)}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    res.status(resp.status).json(data);
-  } catch (err) {
-    res.status(500).json({ status: "error", error: String(err) });
+  header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
   }
-};
+
+  header h1 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  header p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  main {
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 20px 24px 60px;
+  }
+
+  .quote-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .quote-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    cursor: pointer;
+  }
+
+  .quote-row:hover {
+    border-color: var(--amber-border);
+  }
+
+  .quote-row .subject {
+    font-weight: 500;
+  }
+
+  .quote-row .meta {
+    color: var(--ink-soft);
+    font-size: 13px;
+    margin-top: 2px;
+  }
+
+  .empty, .loading, .error {
+    color: var(--ink-soft);
+    padding: 24px 0;
+  }
+
+  .error {
+    color: var(--red);
+  }
+
+  .detail {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    margin-top: 16px;
+  }
+
+  .detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+
+  .detail-header h2 {
+    font-size: 17px;
+    margin: 0;
+  }
+
+  .back-link {
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .back-link:hover {
+    color: var(--ink);
+  }
+
+  .site-block {
+    margin-top: 20px;
+  }
+
+  .site-block h3 {
+    font-size: 14px;
+    text-transform: none;
+    color: var(--ink-soft);
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+
+  th {
+    color: var(--ink-soft);
+    font-weight: 500;
+    font-size: 13px;
+  }
+
+  .warning-banner {
+    background: var(--red-bg);
+    color: var(--red);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin: 8px 0 0;
+  }
+
+  .approve-panel {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  select, button {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+
+  select {
+    background: var(--surface);
+    color: var(--ink);
+  }
+
+  button.approve-btn {
+    background: var(--amber);
+    color: #fff;
+    border: none;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  button.approve-btn:hover {
+    background: #92400e;
+  }
+
+  button.approve-btn:disabled {
+    background: #d6d3d1;
+    cursor: not-allowed;
+  }
+
+  .result-panel {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+
+  .result-panel.ok {
+    background: #f0fdf4;
+    color: var(--green);
+    border: 1px solid #bbf7d0;
+  }
+
+  .result-panel.fail {
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid #fecaca;
+  }
+
+  .result-panel ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+  }
+
+  .missing-note {
+    color: var(--ink-soft);
+    font-size: 13px;
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Quote Approvals</h1>
+  <p>Quotes with all supplier replies in, ready for review.</p>
+</header>
+
+<main>
+  <div id="list-view">
+    <div id="list-container" class="loading">Loading pending quotes…</div>
+  </div>
+
+  <div id="detail-view" style="display:none;"></div>
+</main>
+
+<script>
+  // v1.2: check login before anything else runs.
+  (async function checkAuth() {
+    try {
+      const resp = await fetch("/api/whoami");
+      if (resp.status === 401) {
+        window.location.href = "/login.html?next=" + encodeURIComponent(window.location.pathname);
+      }
+    } catch (err) {
+      // let the page continue; individual calls will 401 safely
+    }
+  })();
+
+  const listContainer = document.getElementById("list-container");
+  const listView = document.getElementById("list-view");
+  const detailView = document.getElementById("detail-view");
+
+  function fmtMoney(n) {
+    if (n === null || n === undefined) return "—";
+    return "$" + Number(n).toFixed(2);
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  async function loadList() {
+    listContainer.className = "loading";
+    listContainer.textContent = "Loading pending quotes…";
+    try {
+      const resp = await fetch("/api/quotes-pending");
+      const data = await resp.json();
+      if (data.status !== "ok") throw new Error(data.error || "Unknown error");
+
+      if (!data.quotes.length) {
+        listContainer.className = "empty";
+        listContainer.textContent = "No quotes are currently awaiting approval.";
+        return;
+      }
+
+      listContainer.className = "quote-list";
+      listContainer.innerHTML = "";
+      data.quotes.forEach((q) => {
+        const row = document.createElement("div");
+        row.className = "quote-row";
+        row.innerHTML = `
+          <div class="subject">${q.subject}</div>
+          <div class="meta">Updated ${fmtDate(q.last_modified)} · Ticket ${q.ticket_id}</div>
+        `;
+        row.onclick = () => openDetail(q.ticket_id);
+        listContainer.appendChild(row);
+      });
+    } catch (err) {
+      listContainer.className = "error";
+      listContainer.textContent = "Couldn't load pending quotes: " + err.message;
+    }
+  }
+
+  async function openDetail(ticketId) {
+    listView.style.display = "none";
+    detailView.style.display = "block";
+    detailView.innerHTML = `<div class="loading">Loading comparison…</div>`;
+
+    try {
+      const resp = await fetch("/api/quote-comparison?ticket_id=" + encodeURIComponent(ticketId));
+      const data = await resp.json();
+      if (data.status !== "ok") throw new Error(data.error || "Unknown error");
+      renderDetail(ticketId, data);
+    } catch (err) {
+      detailView.innerHTML = `
+        <div class="back-link" onclick="closeDetail()">← Back to list</div>
+        <div class="error">Couldn't load this quote: ${err.message}</div>
+      `;
+    }
+  }
+
+  function closeDetail() {
+    detailView.style.display = "none";
+    listView.style.display = "block";
+    loadList();
+  }
+
+  function renderDetail(ticketId, data) {
+    const marginPct = data.margin_fraction != null ? (data.margin_fraction * 100).toFixed(0) + "%" : "not set";
+
+    let sitesHtml = "";
+    data.sites.forEach((site) => {
+      let rows = "";
+      site.waste_types.forEach((wt) => {
+        wt.options.forEach((opt) => {
+          rows += `
+            <tr>
+              <td>${wt.waste_type}</td>
+              <td>${opt.company}</td>
+              <td>${opt.sp_price != null ? fmtMoney(opt.sp_price) + " " + (opt.unit || "") : (opt.raw_price ?? "—")}</td>
+              <td>${opt.suggested_client_price != null ? fmtMoney(opt.suggested_client_price) : "—"}</td>
+            </tr>
+          `;
+        });
+        if (wt.warning) {
+          rows += `<tr><td colspan="4"><div class="warning-banner">${wt.warning}</div></td></tr>`;
+        }
+      });
+
+      sitesHtml += `
+        <div class="site-block">
+          <h3>${site.site_label}${site.location ? " — " + site.location : ""}</h3>
+          <table>
+            <thead>
+              <tr><th>Waste type</th><th>Supplier</th><th>Supplier price</th><th>Suggested client price</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    });
+
+    const companyOptions = data.companies_replied
+      .map((c) => `<option value="${c}">${c}</option>`)
+      .join("");
+
+    const missingNote = data.companies_missing.length
+      ? `<div class="missing-note">Still waiting on: ${data.companies_missing.join(", ")} — you can still approve using whoever has already replied.</div>`
+      : "";
+
+    detailView.innerHTML = `
+      <div class="back-link" onclick="closeDetail()">← Back to list</div>
+      <div class="detail">
+        <div class="detail-header">
+          <h2>${data.client_name || "(client name not provided)"}</h2>
+          <span>Margin: ${marginPct}</span>
+        </div>
+        ${sitesHtml}
+        ${missingNote}
+        <div class="approve-panel">
+          <label for="company-select">Approve using:</label>
+          <select id="company-select">${companyOptions}</select>
+          <button class="approve-btn" id="approve-btn">Generate quote</button>
+        </div>
+        <div id="result-panel"></div>
+      </div>
+    `;
+
+    document.getElementById("approve-btn").onclick = () => approveQuote(ticketId);
+  }
+
+  async function approveQuote(ticketId) {
+    const btn = document.getElementById("approve-btn");
+    const company = document.getElementById("company-select").value;
+    const resultPanel = document.getElementById("result-panel");
+
+    btn.disabled = true;
+    btn.textContent = "Generating…";
+    resultPanel.innerHTML = "";
+
+    try {
+      const resp = await fetch("/api/approve-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticket_id: ticketId, company }),
+      });
+      const data = await resp.json();
+
+      if (data.status !== "ok") throw new Error(data.error || "Unknown error");
+
+      const blobLines = (data.blob_results || [])
+        .map((b) => `<li>${b.file}: ${b.status}${b.error ? " — " + b.error : ""}</li>`)
+        .join("");
+      const hsLines = (data.hubspot_attachment_results || [])
+        .map((h) => `<li>${h.file}: ${h.status}${h.error ? " — " + h.error : ""}</li>`)
+        .join("");
+
+      resultPanel.className = "result-panel ok";
+      resultPanel.innerHTML = `
+        Quote generated using ${data.chosen_company}'s pricing (margin: ${data.margin_used}).
+        Emailed to James/John for review.
+        <ul>${blobLines}${hsLines}</ul>
+      `;
+      btn.textContent = "Generate quote";
+      btn.disabled = false;
+    } catch (err) {
+      resultPanel.className = "result-panel fail";
+      resultPanel.textContent = "Couldn't generate the quote: " + err.message;
+      btn.textContent = "Generate quote";
+      btn.disabled = false;
+    }
+  }
+
+  loadList();
+</script>
+
+</body>
+</html>
