@@ -1,4 +1,9 @@
 // FWS Command Center — Approve Invoice Proxy
+// v1.1 — 14 Sept 2026
+// v1.1: Added the site-wide session-cookie check (see login.js /
+//   whoami.js in the project root) — this endpoint confirms real
+//   invoices and creates real Xero drafts, so it especially must not
+//   be callable without a valid session.
 // v1.0 — 7 Sept 2026
 //
 // PURPOSE: the Command Center frontend cannot safely call
@@ -19,14 +24,33 @@
 // one place (clv-invoice-automation), same principle as everywhere
 // else in this build: no duplicated logic across projects.
 
+import crypto from 'crypto';
+
 const INVOICE_AUTOMATION_BASE = process.env.INVOICE_AUTOMATION_BASE_URL || 'https://clv-invoice-automation.vercel.app';
 
+function isAuthenticated(req) {
+  const cookieHeader = req.headers.cookie || '';
+  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
+  if (!match) return false;
+  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
+  const expiry = Number(expiryStr);
+  if (!expiry || Date.now() > expiry) return false;
+  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
+  const sigBuf = Buffer.from(signature || '');
+  const expBuf = Buffer.from(expected);
+  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+}
+
 export default async function handler(req, res) {
+  if (!isAuthenticated(req)) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+
   if (req.method === 'GET') {
     return res.status(200).json({
       status: 'ok',
       message: 'Command Center — Approve Invoice proxy',
-      version: 'v1.0',
+      version: 'v1.1',
       forwardsTo: `${INVOICE_AUTOMATION_BASE}/api/approve`,
     });
   }
