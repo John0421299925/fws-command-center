@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Quote Approvals
-  Version: v1.1
+  Version: v1.2
 
   Lists quotation tickets ready for review (all SPs replied), and lets
   you open one to see the price comparison, pick a winner, and
@@ -14,6 +14,10 @@
   v1.1 - Fixed "Invalid Date" on the pending-quotes list: HubSpot
          returns hs_lastmodifieddate as an ISO date string, not epoch
          milliseconds, so fmtDate() was parsing it wrong.
+  v1.2 - Added the same site-wide login check as index.html: redirects
+         to /login.html if there's no valid session. Real protection
+         is server-side (quotes-pending.js, quote-comparison.js and
+         approve-quote.js all now check the session cookie themselves).
 -->
 <html lang="en">
 <head>
@@ -264,6 +268,18 @@
 </main>
 
 <script>
+  // v1.2: check login before anything else runs.
+  (async function checkAuth() {
+    try {
+      const resp = await fetch("/api/whoami");
+      if (resp.status === 401) {
+        window.location.href = "/login.html?next=" + encodeURIComponent(window.location.pathname);
+      }
+    } catch (err) {
+      // let the page continue; individual calls will 401 safely
+    }
+  })();
+
   const listContainer = document.getElementById("list-container");
   const listView = document.getElementById("list-view");
   const detailView = document.getElementById("detail-view");
