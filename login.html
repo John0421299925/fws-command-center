@@ -1,11 +1,17 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Login
-  Version: v1.0
+  Version: v1.1
 
   Single password gate for the whole Command Centre (pages and APIs).
   Posts to /api/login, which sets a session cookie on success and
   redirects back to wherever the person was trying to go.
+
+  v1.1 - The error message shown on failure was hardcoded to
+         "Incorrect password" regardless of what actually went wrong
+         (e.g. CC_PASSWORD not configured on this environment would
+         look identical to a genuine wrong password). Now shows the
+         real error text the server returned.
 -->
 <html lang="en">
 <head>
@@ -83,7 +89,7 @@
     <form id="login-form">
       <input type="password" id="password" placeholder="Password" autofocus />
       <button type="submit" id="submit-btn">Log in</button>
-      <div class="error-msg" id="error-msg">Incorrect password — try again.</div>
+      <div class="error-msg" id="error-msg"></div>
     </form>
   </div>
 
@@ -112,6 +118,7 @@
         if (data.status === 'ok') {
           window.location.href = next;
         } else {
+          errorMsg.textContent = data.error || 'Login failed — try again.';
           errorMsg.style.display = 'block';
           submitBtn.disabled = false;
           submitBtn.textContent = 'Log in';
