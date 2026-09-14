@@ -1,5 +1,9 @@
 // FWS Command Center — Agent Status Checker
-// v1.2 — 12 Sept 2026
+// v1.3 — 14 Sept 2026
+// v1.3: Added the site-wide session-cookie check (see login.js /
+//   whoami.js in the project root) — for consistency with every other
+//   endpoint now that the whole Command Centre is gated, even though
+//   this one only reveals agent version/health, not business data.
 // v1.2: Agent 1 re-enabled (mailbox subscription live again, filename-
 //   signal classifier fix deployed v1.8, renewal cron confirmed working)
 //   — cleared its manualNote back to null. This field is still hand-set,
@@ -14,6 +18,8 @@
 //   field itself, so we now split on " - " and keep only the first part.
 // v1.0 — Checks all known agents server-side (avoids browser CORS issues)
 //   and returns a single combined JSON response for the dashboard.
+
+import crypto from 'crypto';
 
 const AGENTS = [
   {
@@ -35,6 +41,19 @@ const AGENTS = [
     manualNote: "Paused by John",
   },
 ];
+
+function isAuthenticated(req) {
+  const cookieHeader = req.headers.cookie || '';
+  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
+  if (!match) return false;
+  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
+  const expiry = Number(expiryStr);
+  if (!expiry || Date.now() > expiry) return false;
+  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
+  const sigBuf = Buffer.from(signature || '');
+  const expBuf = Buffer.from(expected);
+  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+}
 
 function cleanVersion(rawVersion) {
   if (!rawVersion) return null;
@@ -86,6 +105,10 @@ async function checkAgent(agent) {
 }
 
 export default async function handler(req, res) {
+  if (!isAuthenticated(req)) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+
   const results = await Promise.all(AGENTS.map(checkAgent));
   res.status(200).json({
     checkedAt: new Date().toISOString(),
