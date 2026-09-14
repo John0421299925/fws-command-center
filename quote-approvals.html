@@ -1,14 +1,15 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Quote Approvals
-  Version: v1.2
+  Version: v1.3
 
   Lists quotation tickets ready for review (all SPs replied), and lets
   you open one to see the price comparison, pick a winner, and
   generate + file the client quote in one click. Calls this project's
   own proxy endpoints (quotes-pending.js, quote-comparison.js,
-  approve-quote.js), which in turn talk to the Auto Quotation Agent —
-  the browser never calls that other Vercel project directly.
+  approve-quote.js, send-quote-to-client.js), which in turn talk to
+  the Auto Quotation Agent — the browser never calls that other
+  Vercel project directly.
 
   v1.0 - Initial build.
   v1.1 - Fixed "Invalid Date" on the pending-quotes list: HubSpot
@@ -18,6 +19,14 @@
          to /login.html if there's no valid session. Real protection
          is server-side (quotes-pending.js, quote-comparison.js and
          approve-quote.js all now check the session cookie themselves).
+  v1.3 - Added the actual "Send to Client" step, appearing only after
+         a successful quote generation. Deliberately its own separate,
+         explicit action — pre-fills whatever client email was
+         captured at intake (editable, since that data is often
+         missing or wrong), and requires a second, explicit confirm
+         click showing the exact recipient before anything is actually
+         emailed to someone outside FWS. This is the one action on
+         this whole page that can't be undone once clicked.
 -->
 <html lang="en">
 <head>
@@ -250,6 +259,67 @@
     font-size: 13px;
     margin-top: 12px;
   }
+
+  .send-panel {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+
+  .send-panel h4 {
+    font-size: 14px;
+    margin: 0 0 10px;
+  }
+
+  .send-panel input[type="email"], .send-panel textarea {
+    width: 100%;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    margin-bottom: 10px;
+    box-sizing: border-box;
+  }
+
+  .send-panel textarea {
+    min-height: 70px;
+    resize: vertical;
+  }
+
+  .send-confirm-box {
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+
+  .send-confirm-box .recipient {
+    font-weight: 600;
+  }
+
+  .send-confirm-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+  }
+
+  button.confirm-send-btn {
+    background: var(--amber);
+    color: #fff;
+    border: none;
+  }
+
+  button.confirm-send-btn:hover {
+    background: #92400e;
+  }
+
+  button.cancel-send-btn {
+    background: var(--surface);
+    color: var(--ink);
+  }
 </style>
 </head>
 <body>
@@ -281,6 +351,8 @@
   })();
 
   const listContainer = document.getElementById("list-container");
+  let currentClientEmail = "";
+  let currentClientName = "";
   const listView = document.getElementById("list-view");
   const detailView = document.getElementById("detail-view");
 
@@ -353,6 +425,9 @@
   }
 
   function renderDetail(ticketId, data) {
+    currentClientEmail = data.client_contact_email || "";
+    currentClientName = data.client_name || "";
+
     const marginPct = data.margin_fraction != null ? (data.margin_fraction * 100).toFixed(0) + "%" : "not set";
 
     let sitesHtml = "";
@@ -410,6 +485,7 @@
           <button class="approve-btn" id="approve-btn">Generate quote</button>
         </div>
         <div id="result-panel"></div>
+        <div id="send-panel"></div>
       </div>
     `;
 
@@ -450,11 +526,80 @@
       `;
       btn.textContent = "Generate quote";
       btn.disabled = false;
+
+      renderSendPanel(ticketId, data.chosen_company);
     } catch (err) {
       resultPanel.className = "result-panel fail";
       resultPanel.textContent = "Couldn't generate the quote: " + err.message;
       btn.textContent = "Generate quote";
       btn.disabled = false;
+    }
+  }
+
+  function renderSendPanel(ticketId, chosenCompany) {
+    const panel = document.getElementById("send-panel");
+    panel.innerHTML = `
+      <div class="send-panel">
+        <h4>Send to Client</h4>
+        <input type="email" id="client-email-input" placeholder="Client email address" value="${currentClientEmail}" />
+        <textarea id="custom-message-input" placeholder="Optional message to include (leave blank to use the standard message)"></textarea>
+        <button class="approve-btn" id="send-to-client-btn">Send to Client</button>
+        <div id="send-confirm-area"></div>
+      </div>
+    `;
+    document.getElementById("send-to-client-btn").onclick = () => requestSendConfirm(ticketId, chosenCompany);
+  }
+
+  function requestSendConfirm(ticketId, chosenCompany) {
+    const email = document.getElementById("client-email-input").value.trim();
+    const confirmArea = document.getElementById("send-confirm-area");
+
+    if (!email) {
+      confirmArea.innerHTML = `<div class="result-panel fail">Enter a client email address first.</div>`;
+      return;
+    }
+
+    confirmArea.innerHTML = `
+      <div class="send-confirm-box">
+        This will email the quote to <span class="recipient">${email}</span> right now — this can't be undone.
+        <div class="send-confirm-actions">
+          <button class="confirm-send-btn" id="confirm-send-btn">Yes, send it</button>
+          <button class="cancel-send-btn" id="cancel-send-btn">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.getElementById("confirm-send-btn").onclick = () => confirmSend(ticketId, chosenCompany, email);
+    document.getElementById("cancel-send-btn").onclick = () => { confirmArea.innerHTML = ""; };
+  }
+
+  async function confirmSend(ticketId, chosenCompany, email) {
+    const confirmArea = document.getElementById("send-confirm-area");
+    const customMessage = document.getElementById("custom-message-input").value.trim();
+    const sendBtn = document.getElementById("send-to-client-btn");
+
+    confirmArea.innerHTML = `<div class="result-panel">Sending…</div>`;
+    sendBtn.disabled = true;
+
+    try {
+      const resp = await fetch("/api/send-quote-to-client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticket_id: ticketId,
+          company: chosenCompany,
+          client_email: email,
+          custom_message: customMessage || null,
+        }),
+      });
+      const data = await resp.json();
+
+      if (data.status !== "ok") throw new Error(data.error || "Unknown error");
+
+      confirmArea.innerHTML = `<div class="result-panel ok">Sent to ${data.sent_to} (James and John CC'd).</div>`;
+      sendBtn.style.display = "none";
+    } catch (err) {
+      confirmArea.innerHTML = `<div class="result-panel fail">Couldn't send: ${err.message}</div>`;
+      sendBtn.disabled = false;
     }
   }
 
