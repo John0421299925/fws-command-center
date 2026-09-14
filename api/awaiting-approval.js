@@ -2,7 +2,13 @@
 // FWS Command Center — Invoices Awaiting Approval
 // Deploy as: api/awaiting-approval.js
 // ================================================================
-// Version: v1.0
+// Version: v1.1
+//
+// v1.1: Added the site-wide session-cookie check (see login.js /
+// whoami.js in the project root) — this endpoint returns real invoice
+// and client data, so it must reject unauthenticated requests
+// directly, not just rely on the dashboard page being behind a login
+// screen.
 //
 // PURPOSE: a live count + age breakdown of every Xero invoice still
 // sitting in DRAFT — i.e. created, but not yet reviewed/authorised by
@@ -21,6 +27,8 @@
 // Usage: GET /api/awaiting-approval
 // ================================================================
 
+import crypto from 'crypto';
+
 const XERO_READER_BASE_URL = process.env.XERO_READER_BASE_URL || 'https://fws-xero-reader.vercel.app';
 
 // Matches the 3-business-day threshold already confirmed and in use
@@ -28,6 +36,19 @@ const XERO_READER_BASE_URL = process.env.XERO_READER_BASE_URL || 'https://fws-xe
 // the dashboard card and the alert email can never disagree about
 // what counts as "stuck".
 const STUCK_BUSINESS_DAYS_THRESHOLD = 3;
+
+function isAuthenticated(req) {
+  const cookieHeader = req.headers.cookie || '';
+  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
+  if (!match) return false;
+  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
+  const expiry = Number(expiryStr);
+  if (!expiry || Date.now() > expiry) return false;
+  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
+  const sigBuf = Buffer.from(signature || '');
+  const expBuf = Buffer.from(expected);
+  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+}
 
 function businessDaysElapsed(fromDate, toDate) {
   const cursor = new Date(fromDate);
@@ -44,6 +65,10 @@ function businessDaysElapsed(fromDate, toDate) {
 }
 
 export default async function handler(req, res) {
+  if (!isAuthenticated(req)) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+
   try {
     const where = 'Status=="DRAFT" AND Type=="ACCREC"';
     const url = `${XERO_READER_BASE_URL}/api/query?resource=Invoices&where=${encodeURIComponent(where)}&order=Date ASC`;
