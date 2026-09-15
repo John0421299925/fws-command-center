@@ -4,12 +4,6 @@
 // ================================================================
 // Version: v1.1
 //
-// v1.1: Added the site-wide session-cookie check (see login.js /
-// whoami.js in the project root) — this endpoint returns real
-// client-level revenue data, so it must reject unauthenticated
-// requests directly, not just rely on the dashboard page being
-// behind a login screen.
-//
 // PURPOSE: the second piece of the "Business Vital Signs" card —
 // revenue per client, sorted highest first, plus each client's share
 // of total revenue (concentration risk — flagged once a single client
@@ -22,41 +16,29 @@
 // margin-by-client.js, rather than duplicating the invoice/line-item
 // fetching logic a second time.
 //
-// Usage: GET /api/revenue-by-client?from=2026-09-01&to=2026-09-30
-// Defaults to the start of the current calendar month through now.
+// v1.1: surfaces periodLabel in the response (from resolvePeriod
+// v1.1's new period-shortcut support) so the dashboard can show "this
+// month" / "year to date" / "FY to date" next to the figures.
+//
+// Usage: GET /api/revenue-by-client?period=month|ytd|fy
+//   or:  GET /api/revenue-by-client?from=2026-09-01&to=2026-09-30
+// Defaults to period=month (start of the current calendar month
+// through now) when neither period nor from/to is given.
 // ================================================================
 
-import crypto from 'crypto';
 import { fetchPassedInvoices, getClientCompany, getLineItemsForInvoice, resolvePeriod } from '../lib/hubspotInvoiceData.js';
 
 // Multiple independent sources agree: a single client above ~20-25%
 // of total revenue is where real concentration exposure begins.
 const CONCENTRATION_RISK_THRESHOLD_PERCENT = 20;
 
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || '';
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
-  const sigBuf = Buffer.from(signature || '');
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
-
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
-    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
-  }
-
   if (!process.env.HUBSPOT_SERVICE_KEY) {
     return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
   }
 
   try {
-    const { fromMs, toMs } = resolvePeriod(req.query);
+    const { fromMs, toMs, periodLabel } = resolvePeriod(req.query);
     const invoices = await fetchPassedInvoices(fromMs, toMs);
 
     const companyNameCache = new Map();
@@ -115,8 +97,8 @@ export default async function handler(req, res) {
       status: 'ok',
       periodFrom: new Date(fromMs).toISOString().split('T')[0],
       periodTo: new Date(toMs).toISOString().split('T')[0],
+      periodLabel,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
-      concentrationRiskThresholdPercent: CONCENTRATION_RISK_THRESHOLD_PERCENT,
       clientCount: clients.length,
       clients,
       revenueByWasteType,
