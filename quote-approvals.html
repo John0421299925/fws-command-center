@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Quote Approvals
-  Version: v1.5
+  Version: v1.6
 
   Lists quotation tickets ready for review (all SPs replied), and lets
   you open one to see the price comparison, pick a winner, and
@@ -41,6 +41,12 @@
          independent reference point alongside recent quotes: one
          compares quote-to-quote, this one compares quote-to-actual-
          spend.
+  v1.6 - Added a "Rate card" column, showing the standing p_services
+         rate for this client + supplier + waste type, when one
+         exists (only applicable to existing clients with an existing
+         service on file — blank for new clients/sites, as expected).
+         Third and final reference point alongside prior quotes and
+         realised cost.
 -->
 <html lang="en">
 <head>
@@ -471,6 +477,17 @@
               : "";
             realisedNote = `${fmtMoney(rc.average_cost)} avg${diffText} <span style="color:var(--ink-soft);font-size:12px;">(${rc.invoice_count} invoice${rc.invoice_count === 1 ? "" : "s"}, ${rc.lookback_days}d)</span>`;
           }
+          let rateCardNote = "—";
+          if (opt.rate_card && opt.rate_card.rate_card_sp_cost != null) {
+            const rcard = opt.rate_card;
+            const diffPct = opt.sp_price != null
+              ? Math.round(((opt.sp_price - rcard.rate_card_sp_cost) / rcard.rate_card_sp_cost) * 100)
+              : null;
+            const diffText = diffPct !== null
+              ? (diffPct > 0 ? ` (${diffPct}% higher)` : diffPct < 0 ? ` (${Math.abs(diffPct)}% lower)` : " (same)")
+              : "";
+            rateCardNote = `${fmtMoney(rcard.rate_card_sp_cost)}${diffText} <span style="color:var(--ink-soft);font-size:12px;">(rate card)</span>`;
+          }
           rows += `
             <tr>
               <td>${wt.waste_type}</td>
@@ -479,11 +496,12 @@
               <td>${opt.suggested_client_price != null ? fmtMoney(opt.suggested_client_price) : "—"}</td>
               <td>${priorNote}</td>
               <td>${realisedNote}</td>
+              <td>${rateCardNote}</td>
             </tr>
           `;
         });
         if (wt.warning) {
-          rows += `<tr><td colspan="6"><div class="warning-banner">${wt.warning}</div></td></tr>`;
+          rows += `<tr><td colspan="7"><div class="warning-banner">${wt.warning}</div></td></tr>`;
         }
       });
 
@@ -492,7 +510,7 @@
           <h3>${site.site_label}${site.location ? " — " + site.location : ""}</h3>
           <table>
             <thead>
-              <tr><th>Waste type</th><th>Supplier</th><th>Supplier price</th><th>Suggested client price</th><th>Vs. this SP's recent quotes</th><th>Vs. recent realised cost</th></tr>
+              <tr><th>Waste type</th><th>Supplier</th><th>Supplier price</th><th>Suggested client price</th><th>Vs. this SP's recent quotes</th><th>Vs. recent realised cost</th><th>Rate card</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
