@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Quote Approvals
-  Version: v1.3
+  Version: v1.4
 
   Lists quotation tickets ready for review (all SPs replied), and lets
   you open one to see the price comparison, pick a winner, and
@@ -27,6 +27,13 @@
          click showing the exact recipient before anything is actually
          emailed to someone outside FWS. This is the one action on
          this whole page that can't be undone once clicked.
+  v1.4 - Added a "Vs. this SP's recent quotes" column, showing the
+         new prior_quotes data from get_comparison_data() — what this
+         same SP has quoted for this same waste type elsewhere in the
+         last 90 days, and how today's quote compares (% higher/lower/
+         same). Helps catch a supplier quoting out of line with their
+         own recent pattern, not just against the other SPs on this
+         one job.
 -->
 <html lang="en">
 <head>
@@ -435,17 +442,29 @@
       let rows = "";
       site.waste_types.forEach((wt) => {
         wt.options.forEach((opt) => {
+          let priorNote = "—";
+          if (opt.prior_quotes) {
+            const pq = opt.prior_quotes;
+            const diffPct = opt.sp_price != null && pq.average_price
+              ? Math.round(((opt.sp_price - pq.average_price) / pq.average_price) * 100)
+              : null;
+            const diffText = diffPct !== null
+              ? (diffPct > 0 ? ` (${diffPct}% higher)` : diffPct < 0 ? ` (${Math.abs(diffPct)}% lower)` : " (same)")
+              : "";
+            priorNote = `${fmtMoney(pq.average_price)} avg${diffText} <span style="color:var(--ink-soft);font-size:12px;">(${pq.quote_count} quote${pq.quote_count === 1 ? "" : "s"}, ${pq.lookback_days}d)</span>`;
+          }
           rows += `
             <tr>
               <td>${wt.waste_type}</td>
               <td>${opt.company}</td>
               <td>${opt.sp_price != null ? fmtMoney(opt.sp_price) + " " + (opt.unit || "") : (opt.raw_price ?? "—")}</td>
               <td>${opt.suggested_client_price != null ? fmtMoney(opt.suggested_client_price) : "—"}</td>
+              <td>${priorNote}</td>
             </tr>
           `;
         });
         if (wt.warning) {
-          rows += `<tr><td colspan="4"><div class="warning-banner">${wt.warning}</div></td></tr>`;
+          rows += `<tr><td colspan="5"><div class="warning-banner">${wt.warning}</div></td></tr>`;
         }
       });
 
@@ -454,7 +473,7 @@
           <h3>${site.site_label}${site.location ? " — " + site.location : ""}</h3>
           <table>
             <thead>
-              <tr><th>Waste type</th><th>Supplier</th><th>Supplier price</th><th>Suggested client price</th></tr>
+              <tr><th>Waste type</th><th>Supplier</th><th>Supplier price</th><th>Suggested client price</th><th>Vs. this SP's recent quotes</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
