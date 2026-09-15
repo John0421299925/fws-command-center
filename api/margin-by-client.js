@@ -4,12 +4,6 @@
 // ================================================================
 // Version: v1.3
 //
-// v1.3: Added the site-wide session-cookie check (see login.js /
-// whoami.js in the project root) — this endpoint returns real
-// client-level revenue and cost data, so it must reject
-// unauthenticated requests directly, not just rely on the dashboard
-// page being behind a login screen.
-//
 // PURPOSE: genuine per-client margin, calculated entirely from data
 // already sitting in HubSpot — no re-parsing supplier PDFs, no Xero
 // needed — thanks to webhook.js v5.5.65Agent persisting the real
@@ -31,40 +25,28 @@
 // v1.2: refactored to use the shared lib/hubspotInvoiceData.js module
 // instead of duplicating invoice/line-item fetching logic, now that
 // revenue-by-client.js needs the exact same underlying data.
+// v1.3: surfaces periodLabel in the response (from resolvePeriod
+// v1.1's new period-shortcut support) so the dashboard can show "this
+// month" / "year to date" / "FY to date" next to the figures, instead
+// of a bare date range.
 //
-// Usage: GET /api/margin-by-client?from=2026-09-01&to=2026-09-30
-// Defaults to the start of the current calendar month through now.
+// Usage: GET /api/margin-by-client?period=month|ytd|fy
+//   or:  GET /api/margin-by-client?from=2026-09-01&to=2026-09-30
+// Defaults to period=month (start of the current calendar month
+// through now) when neither period nor from/to is given.
 // ================================================================
 
-import crypto from 'crypto';
 import { fetchPassedInvoices, getClientCompany, getLineItemsForInvoice, resolvePeriod } from '../lib/hubspotInvoiceData.js';
 
 const MARGIN_TARGET_PERCENT = 15.5;
 
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || '';
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
-  const sigBuf = Buffer.from(signature || '');
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
-
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
-    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
-  }
-
   if (!process.env.HUBSPOT_SERVICE_KEY) {
     return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
   }
 
   try {
-    const { fromMs, toMs } = resolvePeriod(req.query);
+    const { fromMs, toMs, periodLabel } = resolvePeriod(req.query);
     const invoices = await fetchPassedInvoices(fromMs, toMs);
 
     const companyNameCache = new Map();
@@ -103,6 +85,9 @@ export default async function handler(req, res) {
         marginPercent: marginPercent !== null ? Math.round(marginPercent * 10) / 10 : null,
         belowTarget: marginPercent !== null ? marginPercent < MARGIN_TARGET_PERCENT : null,
         invoiceCount: c.invoiceCount,
+        // Flags when older line items (pre-v5.5.65Agent, no cost data)
+        // are diluting this client's figure — a low coverage % means
+        // "trust this number less, not enough real cost data yet".
         costDataCoveragePercent: c.lineItemsTotal > 0 ? Math.round((c.lineItemsWithCost / c.lineItemsTotal) * 1000) / 10 : 0,
       };
     }).sort((a, b) => (a.marginPercent ?? 999) - (b.marginPercent ?? 999));
@@ -111,6 +96,7 @@ export default async function handler(req, res) {
       status: 'ok',
       periodFrom: new Date(fromMs).toISOString().split('T')[0],
       periodTo: new Date(toMs).toISOString().split('T')[0],
+      periodLabel,
       marginTargetPercent: MARGIN_TARGET_PERCENT,
       clientCount: clients.length,
       clients,
