@@ -934,15 +934,29 @@
     }
 
     async function loadVitalSigns() {
+      // v1.17 FIX: real race condition — switching the dropdown fires
+      // a new fetch, but a slower EARLIER request could still resolve
+      // AFTER a newer one and overwrite it. Capture which period this
+      // specific call was fetching for, and bail before touching the
+      // DOM if the user has since switched to a different period —
+      // only the most recent selection is ever allowed to render.
+      const requestPeriod = selectedPeriod;
       try {
         const [marginRes, revenueRes, agingRes, payablesRes, awaitingRes, quotesRes] = await Promise.all([
-          fetch('/api/margin-by-client?period=' + selectedPeriod).then(r => r.json()),
-          fetch('/api/revenue-by-client?period=' + selectedPeriod).then(r => r.json()),
+          fetch('/api/margin-by-client?period=' + requestPeriod).then(r => r.json()),
+          fetch('/api/revenue-by-client?period=' + requestPeriod).then(r => r.json()),
           fetch('/api/ar-aging').then(r => r.json()),
           fetch('/api/ap-aging').then(r => r.json()),
           fetch('/api/awaiting-approval').then(r => r.json()),
           fetch('/api/quotes-pending').then(r => r.json()),
         ]);
+
+        if (requestPeriod !== selectedPeriod) {
+          // A newer request has since started (or is about to render)
+          // for a different period — this response is stale, discard
+          // it rather than let it overwrite the current selection.
+          return;
+        }
 
         if (revenueRes.status === 'ok') {
           setVitalCard(0, `Revenue, ${revenueRes.periodLabel}`, money(revenueRes.totalRevenue), `${revenueRes.clientCount} client${revenueRes.clientCount === 1 ? '' : 's'}`);
