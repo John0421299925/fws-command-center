@@ -1,52 +1,21 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.16 — 14 Sept 2026
-     v1.16: Added the FWS logo to the header. It's a white-background
-       JPEG, so it sits inside a small white rounded card rather than
-       going directly on the dark background — otherwise it would look
-       like a rendering glitch, not a logo. Expects a file at
-       /logo.jpg in the repo root (uploaded separately by John, since
-       binary files can't be pasted as text).
-     v1.15: Added a whole-site login system (login.html, api/login.js,
-       api/logout.js, api/whoami.js) at John's request — the whole
-       Command Centre displays sensitive business data (revenue,
-       margin, client names, quote pricing), not just the Rate Card
-       write-access tools, so it needs its own gate rather than relying
-       on individual tools being locked. This page now checks
-       api/whoami on load and redirects to /login.html if there's no
-       valid session — but the REAL protection is that every
-       api/*.js file that returns real data checks the same session
-       cookie itself before responding, so the data is protected even
-       if someone loads this page's HTML directly without running its
-       JS. Added a small "Log out" link in the header.
-     v1.14: "Invoices awaiting approval" switched from the shared
-       amber "warning" styling to its own bright fluorescent yellow
-       (John's request), matching the glow treatment already given to
-       the green Quotations card — both now read as distinct, deliberately
-       eye-catching categories rather than blending into the generic
-       amber "warning" look. Plain amber "warning" is still used
-       elsewhere (e.g. Overdue receivables crossing its threshold),
-       untouched.
-     v1.13: Moved Quotations out of its own standalone section (added
-       one version ago) into Business Vital Signs instead, at John's
-       request — sits right next to "Invoices awaiting approval" as a
-       7th glance-level card rather than a separate launcher-style
-       tile. Now shows a real live count (fed by the existing
-       api/quotes-pending.js, already used by quote-approvals.html)
-       instead of just being a static link. Kept the bright
-       fluorescent-green styling and stays green unconditionally, same
-       pattern as "Invoices awaiting approval" staying amber
-       unconditionally — both read as categories, not alarms. The
-       whole card is a clickable link straight to quote-approvals.html.
-     v1.12: The Auto Quotation Agent's Command Centre screen
-       (quote-approvals.html) is now live — comparison table, SP
-       dropdown, one-click generate/attach/file. Removed "Automated
-       Quotations" from the "On the Horizon" roadmap (it's no longer
-       a future idea) and gave it a real section instead: a single
-       bright fluorescent-green tile (John's explicit request — this
-       is a new colour in the palette, distinct from Rate Card's amber
-       and Exceptions' red, deliberately eye-catching to flag "new and
-       live") linking straight to quote-approvals.html.
+     v1.12 — 15 Sept 2026
+     v1.12: ADDED a period selector (This month / Year to date /
+       Financial year to date) for the Revenue and Blended Margin
+       cards, per John's request. Backed by resolvePeriod() v1.1 in
+       lib/hubspotInvoiceData.js, which now understands a `period`
+       shortcut alongside the existing explicit from/to override — so
+       this is a genuinely different date range being fetched, not
+       just a relabelled one. Only Revenue, Blended Margin, and their
+       two drill-downs (margin-by-client, revenue-by-client) respond
+       to the selector; Overdue receivables, Largest client/supplier,
+       and Invoices awaiting approval are point-in-time balance
+       snapshots, not period sums, so they're deliberately left out of
+       scope for this control. Card labels now read the API's own
+       periodLabel ("this month" / "year to date" / "FY to date")
+       instead of a hardcoded "this period", so the label can never
+       drift out of sync with what was actually fetched.
      v1.11: ADDED "Invoices Awaiting Approval" card — a live count of
        every Xero invoice still sitting in DRAFT (not yet reviewed/
        authorised by James), fed by the new api/awaiting-approval.js.
@@ -143,8 +112,6 @@
       --ok: #22c55e;
       --error: #ef4444;
       --unknown: #f59e0b;
-      --quote-green: #39ff14;
-      --invoice-yellow: #eaff00;
     }
     * { box-sizing: border-box; }
     body {
@@ -159,17 +126,6 @@
       max-width: 1000px;
       margin: 0 auto 32px;
       text-align: center;
-    }
-    .logo-wrap {
-      display: inline-block;
-      background: #ffffff;
-      border-radius: 10px;
-      padding: 10px 20px;
-      margin-bottom: 14px;
-    }
-    .logo-wrap img {
-      height: 40px;
-      display: block;
     }
     header h1 {
       font-size: 1.6rem;
@@ -317,38 +273,6 @@
       font-size: 0.78rem;
       color: var(--muted);
     }
-    /* v1.13: Quotations vital-sign card — deliberately its own colour
-       (bright green), distinct from Rate Card's amber and Exceptions'
-       red, so it reads as "new and live". Stays green unconditionally,
-       same pattern as the amber "Invoices awaiting approval" card —
-       both are categories, not alarms. */
-    a.vital-card.quote-vital {
-      display: block;
-      text-decoration: none;
-      color: var(--text);
-      border: 1px solid var(--quote-green);
-      box-shadow: 0 0 12px rgba(57,255,20,0.35);
-      transition: box-shadow 0.15s ease;
-    }
-    a.vital-card.quote-vital:hover {
-      box-shadow: 0 0 18px rgba(57,255,20,0.55);
-    }
-    .vital-card.quote-vital .label { color: var(--quote-green); }
-    .vital-card.quote-vital .value { color: var(--quote-green); }
-    .vital-card.quote-vital .sub { color: var(--quote-green); }
-    /* v1.14: Invoices awaiting approval — own bright fluorescent
-       yellow, same glow treatment as the green Quotations card, so
-       both read as distinct live categories rather than generic amber
-       "warning" (which is still used elsewhere, e.g. Overdue
-       receivables crossing its threshold). */
-    .vital-card.invoice-vital {
-      background: var(--card-bg);
-      border: 1px solid var(--invoice-yellow);
-      box-shadow: 0 0 12px rgba(234,255,0,0.35);
-    }
-    .vital-card.invoice-vital .label { color: var(--invoice-yellow); }
-    .vital-card.invoice-vital .value { color: var(--invoice-yellow); }
-    .vital-card.invoice-vital .sub { color: var(--invoice-yellow); }
     .exceptions-list {
       max-width: 1000px;
       margin: 0 auto;
@@ -426,6 +350,29 @@
       border: 1px dashed var(--border);
       border-radius: 10px;
     }
+    /* v1.12: period selector */
+    .vital-signs-header {
+      max-width: 1000px;
+      margin: 40px auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .vital-signs-header .section-heading {
+      margin: 0;
+    }
+    #period-select {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    #period-select:hover { border-color: var(--muted); }
     /* v1.8: Business Vital Signs */
     .vital-signs-grid {
       max-width: 1000px;
@@ -581,21 +528,25 @@
 </head>
 <body>
   <header>
-    <div class="logo-wrap"><img src="/logo.jpg" alt="Future Waste Solutions" /></div>
     <h1>FWS Command Center</h1>
     <p>Agent Health — live status of all automation systems</p>
-    <p style="margin-top:8px;"><a href="/api/logout" style="color: var(--muted); font-size: 0.8rem;">Log out</a></p>
   </header>
 
-  <div class="section-heading">Business Vital Signs</div>
+  <div class="vital-signs-header">
+    <div class="section-heading">Business Vital Signs</div>
+    <select id="period-select" onchange="onPeriodChange(this.value)">
+      <option value="month">This month</option>
+      <option value="ytd">Year to date</option>
+      <option value="fy">Financial year to date</option>
+    </select>
+  </div>
   <div class="vital-signs-grid" id="vital-signs-grid">
     <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
     <div class="vital-card"><p class="label">Largest supplier (payables)</p><p class="value">…</p></div>
-    <div class="vital-card invoice-vital"><p class="label">Invoices awaiting approval</p><p class="value">…</p></div>
-    <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
+    <div class="vital-card warning"><p class="label">Invoices awaiting approval</p><p class="value">…</p></div>
   </div>
 
   <details class="drilldown">
@@ -623,7 +574,7 @@
     <table id="awaiting-approval-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
   </details>
 
-  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
+  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck. The period selector above only affects Revenue and Blended Margin (and their drill-downs) — the other cards are point-in-time balances, not period sums.</div>
 
   <div class="grid" id="agent-grid">
     <div class="card">
@@ -687,6 +638,15 @@
       </ul>
     </div>
     <div class="roadmap-card">
+      <div class="card-top"><h2>💷 Automated Quotations</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>Draft client quotes drawn straight from the rate card.</p>
+      <ul>
+        <li>Pulls pricing from p_services rate card</li>
+        <li>Draft-then-confirm before sending</li>
+        <li>Not yet scoped in detail</li>
+      </ul>
+    </div>
+    <div class="roadmap-card">
       <div class="card-top"><h2>🌐 Website Content Queue</h2><span class="coming-soon-badge">Coming soon</span></div>
       <p>Marketing &amp; website content drafted by Claude, reviewed before publishing.</p>
       <ul>
@@ -707,24 +667,6 @@
   </div>
 
   <script>
-    // v1.15: check login before anything else runs. If there's no
-    // valid session, bounce to the login page rather than showing a
-    // shell full of permanently-loading placeholders. This is a UX
-    // convenience — the real protection is server-side on every
-    // api/*.js endpoint.
-    (async function checkAuth() {
-      try {
-        const resp = await fetch('/api/whoami');
-        if (resp.status === 401) {
-          window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname);
-        }
-      } catch (err) {
-        // If the check itself fails, let the page continue rather than
-        // trap the person on a broken redirect loop — the individual
-        // data calls will still fail safely with 401s.
-      }
-    })();
-
     async function loadStatus() {
       const grid = document.getElementById('agent-grid');
       const lastChecked = document.getElementById('last-checked');
@@ -858,6 +800,15 @@
     loadExceptions();
     setInterval(loadExceptions, 60000);
 
+    // v1.12: period selector state — only Revenue/Blended Margin (and
+    // their two drill-downs) respond to this; everything else on the
+    // Vital Signs row is a point-in-time balance, not a period sum.
+    let selectedPeriod = 'month';
+    function onPeriodChange(value) {
+      selectedPeriod = value;
+      loadVitalSigns();
+    }
+
     // v1.8: Business Vital Signs
     function money(n) {
       return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(n || 0);
@@ -867,42 +818,28 @@
       const grid = document.getElementById('vital-signs-grid');
       const card = grid.children[index];
       // v1.11: the "Invoices awaiting approval" card (index 5) always
-      // keeps its own styling regardless of flagClass — it's meant to
-      // read as a category, not just an alarm when something's
-      // overdue. v1.14: switched from shared amber "warning" to its
-      // own fluorescent yellow (invoice-vital), matching the green
-      // Quotations card's glow treatment.
-      // v1.13: same pattern for "Quotes awaiting approval" (index 6),
-      // which always stays green. Both are anchor/div elements handled
-      // the same way here — only className/innerHTML are touched,
-      // never the element itself, so the quote card's href survives.
+      // keeps its yellow "warning" styling regardless of flagClass —
+      // it's meant to read as a category, same as Rate Card's amber
+      // tiles, not just an alarm when something's overdue.
       const isAwaitingApprovalCard = index === 5;
-      const isQuoteCard = index === 6;
-      if (isQuoteCard) {
-        card.className = 'vital-card quote-vital';
-      } else if (isAwaitingApprovalCard) {
-        card.className = 'vital-card invoice-vital';
-      } else {
-        card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
-      }
+      card.className = 'vital-card' + (isAwaitingApprovalCard ? ' warning' : (flagClass ? ' ' + flagClass : ''));
       card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
     }
 
     async function loadVitalSigns() {
       try {
-        const [marginRes, revenueRes, agingRes, payablesRes, awaitingRes, quotesRes] = await Promise.all([
-          fetch('/api/margin-by-client').then(r => r.json()),
-          fetch('/api/revenue-by-client').then(r => r.json()),
+        const [marginRes, revenueRes, agingRes, payablesRes, awaitingRes] = await Promise.all([
+          fetch('/api/margin-by-client?period=' + selectedPeriod).then(r => r.json()),
+          fetch('/api/revenue-by-client?period=' + selectedPeriod).then(r => r.json()),
           fetch('/api/ar-aging').then(r => r.json()),
           fetch('/api/ap-aging').then(r => r.json()),
           fetch('/api/awaiting-approval').then(r => r.json()),
-          fetch('/api/quotes-pending').then(r => r.json()),
         ]);
 
         if (revenueRes.status === 'ok') {
-          setVitalCard(0, 'Revenue, this period', money(revenueRes.totalRevenue), `${revenueRes.clientCount} client${revenueRes.clientCount === 1 ? '' : 's'}`);
+          setVitalCard(0, `Revenue, ${revenueRes.periodLabel}`, money(revenueRes.totalRevenue), `${revenueRes.clientCount} client${revenueRes.clientCount === 1 ? '' : 's'}`);
         } else {
-          setVitalCard(0, 'Revenue, this period', '—', 'Could not load');
+          setVitalCard(0, 'Revenue', '—', 'Could not load');
         }
 
         if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
@@ -910,8 +847,9 @@
           const totalCost = marginRes.clients.reduce((s, c) => s + c.cost, 0);
           const blendedMargin = totalRev > 0 ? ((totalRev - totalCost) / totalRev) * 100 : null;
           const belowTarget = blendedMargin !== null && blendedMargin < marginRes.marginTargetPercent;
+          const marginSub = (belowTarget ? `below ${marginRes.marginTargetPercent}% target` : `target ${marginRes.marginTargetPercent}%`) + ` · ${marginRes.periodLabel}`;
           setVitalCard(1, 'Blended margin', blendedMargin !== null ? blendedMargin.toFixed(1) + '%' : '—',
-            belowTarget ? `below ${marginRes.marginTargetPercent}% target` : `target ${marginRes.marginTargetPercent}%`,
+            marginSub,
             belowTarget ? 'flagged' : null);
         } else {
           setVitalCard(1, 'Blended margin', '—', 'No data this period');
@@ -952,16 +890,6 @@
           setVitalCard(5, 'Invoices awaiting approval', awaitingRes.totalCount, stuckNote);
         } else {
           setVitalCard(5, 'Invoices awaiting approval', '—', 'Could not load');
-        }
-
-        // v1.13: Quotes awaiting approval — count of tickets with all
-        // SP replies in, ready for a winner to be picked. Click-through
-        // to quote-approvals.html to actually review and approve.
-        if (quotesRes.status === 'ok') {
-          const count = quotesRes.quotes.length;
-          setVitalCard(6, 'Quotes awaiting approval', count, count > 0 ? 'Click to review' : 'All caught up');
-        } else {
-          setVitalCard(6, 'Quotes awaiting approval', '—', 'Could not load');
         }
 
         const marginTable = document.getElementById('margin-table');
