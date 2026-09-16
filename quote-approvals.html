@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Quote Approvals
-  Version: v1.6
+  Version: v1.7
 
   Lists quotation tickets ready for review (all SPs replied), and lets
   you open one to see the price comparison, pick a winner, and
@@ -47,6 +47,12 @@
          service on file — blank for new clients/sites, as expected).
          Third and final reference point alongside prior quotes and
          realised cost.
+  v1.7 - "Vs. recent realised cost" now shows the container size it
+         matched (e.g. "660L") alongside the invoice count, since
+         realised_cost (shared_logic.py v3.10) now matches strictly on
+         container size rather than blending sizes together — this
+         makes it visible on-screen exactly what's being compared,
+         not just correct behind the scenes.
 -->
 <html lang="en">
 <head>
@@ -475,7 +481,7 @@
             const diffText = diffPct !== null
               ? (diffPct > 0 ? ` (${diffPct}% higher)` : diffPct < 0 ? ` (${Math.abs(diffPct)}% lower)` : " (same)")
               : "";
-            realisedNote = `${fmtMoney(rc.average_cost)} avg${diffText} <span style="color:var(--ink-soft);font-size:12px;">(${rc.invoice_count} invoice${rc.invoice_count === 1 ? "" : "s"}, ${rc.lookback_days}d)</span>`;
+            realisedNote = `${fmtMoney(rc.average_cost)} avg${diffText} <span style="color:var(--ink-soft);font-size:12px;">(${rc.invoice_count} invoice${rc.invoice_count === 1 ? "" : "s"}, ${rc.lookback_days}d${rc.container_size ? ", " + rc.container_size : ""})</span>`;
           }
           let rateCardNote = "—";
           if (opt.rate_card && opt.rate_card.rate_card_sp_cost != null) {
