@@ -1,5 +1,12 @@
 // FWS Command Center — Approve Invoice Proxy
-// v1.1 — 14 Sept 2026
+// v1.2
+// v1.2: swapped the old inline single-shared-password cookie check
+//   for the shared verifySession() from lib/auth.js — required now
+//   that the Command Centre has moved to real per-person logins (see
+//   lib/auth.js / api/login.js). Restricted to admin/ops sessions —
+//   this creates real Xero drafts from any client's invoice, an
+//   operational task, not something a sales rep should be able to
+//   trigger from their own scoped view.
 // v1.1: Added the site-wide session-cookie check (see login.js /
 //   whoami.js in the project root) — this endpoint confirms real
 //   invoices and creates real Xero drafts, so it especially must not
@@ -24,33 +31,24 @@
 // one place (clv-invoice-automation), same principle as everywhere
 // else in this build: no duplicated logic across projects.
 
-import crypto from 'crypto';
+import { verifySession } from '../lib/auth.js';
 
 const INVOICE_AUTOMATION_BASE = process.env.INVOICE_AUTOMATION_BASE_URL || 'https://clv-invoice-automation.vercel.app';
 
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || '';
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
-  const sigBuf = Buffer.from(signature || '');
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
-
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const session = verifySession(req);
+  if (!session) {
     return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+  if (session.role !== 'admin' && session.role !== 'ops') {
+    return res.status(403).json({ status: 'error', error: 'Approving invoices is restricted to admin/ops accounts' });
   }
 
   if (req.method === 'GET') {
     return res.status(200).json({
       status: 'ok',
       message: 'Command Center — Approve Invoice proxy',
-      version: 'v1.1',
+      version: 'v1.2',
       forwardsTo: `${INVOICE_AUTOMATION_BASE}/api/approve`,
     });
   }
