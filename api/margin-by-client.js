@@ -2,7 +2,18 @@
 // FWS Command Center — Margin by Client
 // Deploy as: api/margin-by-client.js
 // ================================================================
-// Version: v1.3
+// Version: v1.4
+//
+// v1.4: FIX — real security gap found while migrating every endpoint
+// to the new per-person login (see lib/auth.js). This file had NO
+// authentication check at all — not even the old shared-password
+// check other endpoints had — meaning anyone who knew the URL could
+// pull real client revenue/cost/margin data directly, regardless of
+// login. Added the same session check now used everywhere else, and
+// restricted to admin/ops roles since this is company-wide margin
+// across every client, not any one rep's own book (a future
+// rep-scoped variant, filtered to the logged-in rep's own clients,
+// would be a separate endpoint reusing the same helpers below).
 //
 // PURPOSE: genuine per-client margin, calculated entirely from data
 // already sitting in HubSpot — no re-parsing supplier PDFs, no Xero
@@ -36,11 +47,20 @@
 // through now) when neither period nor from/to is given.
 // ================================================================
 
+import { verifySession } from '../lib/auth.js';
 import { fetchPassedInvoices, getClientCompany, getLineItemsForInvoice, resolvePeriod } from '../lib/hubspotInvoiceData.js';
 
 const MARGIN_TARGET_PERCENT = 15.5;
 
 export default async function handler(req, res) {
+  const session = verifySession(req);
+  if (!session) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+  if (session.role !== 'admin' && session.role !== 'ops') {
+    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin/ops accounts' });
+  }
+
   if (!process.env.HUBSPOT_SERVICE_KEY) {
     return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
   }
