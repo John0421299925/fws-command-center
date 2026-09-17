@@ -10,7 +10,7 @@
 // lib/auth.js / api/login.js). Also now checks the session's role:
 // this endpoint returns company-wide receivables across every
 // client, not any one rep's own book, so it's restricted to
-// admin/ops sessions — a future "rep" session (e.g. Stuart's) should
+// admin-only — any "rep" session (Christine, Stuart, or future reps) should
 // only ever see their own scoped Sales CC data, not the whole
 // company's AR.
 // v1.1: Added the site-wide session-cookie check (see login.js /
@@ -61,8 +61,8 @@ export default async function handler(req, res) {
   if (!session) {
     return res.status(401).json({ status: 'error', error: 'Not authenticated' });
   }
-  if (session.role !== 'admin' && session.role !== 'ops') {
-    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin/ops accounts' });
+  if (session.role !== 'admin') {
+    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin accounts' });
   }
 
   try {
