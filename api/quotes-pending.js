@@ -1,14 +1,18 @@
 // FWS Command Centre — Pending Quote Approvals
-// Version: v1.2
+// Version: v1.3
 //
+// v1.3: FIX — v1.2 wrongly restricted this to admin/ops sessions.
+// Quotes are core to a sales rep's actual job, not company-wide admin
+// data the way AR/AP/margin are — any logged-in person (admin, ops,
+// or a future rep) needs to see quotes awaiting approval. Removed the
+// role restriction entirely; only a valid session is required now.
+// Once per-rep quote attribution exists, a rep-scoped filter (only
+// MY quotes) could be added here, but that's a future refinement, not
+// a reason to lock reps out entirely today.
 // v1.2: swapped the old inline single-shared-password cookie check
 // for the shared verifySession() from lib/auth.js — required now
 // that the Command Centre has moved to real per-person logins (see
-// lib/auth.js / api/login.js). Restricted to admin/ops sessions for
-// now — this lists every quote ticket company-wide, not filtered to
-// any one rep. A future rep-scoped version would need each ticket's
-// owner checked against the logged-in rep's ownerId, which isn't
-// wired up yet.
+// lib/auth.js / api/login.js).
 // v1.1: Added the site-wide session-cookie check (see login.js /
 //       whoami.js for how the cookie is created and verified) — this
 //       endpoint returns real client/pricing-adjacent data, so it must
@@ -30,10 +34,6 @@ module.exports = async (req, res) => {
   const session = verifySession(req);
   if (!session) {
     res.status(401).json({ status: "error", error: "Not authenticated" });
-    return;
-  }
-  if (session.role !== "admin" && session.role !== "ops") {
-    res.status(403).json({ status: "error", error: "This view is company-wide and restricted to admin/ops accounts" });
     return;
   }
 
