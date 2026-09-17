@@ -1,14 +1,14 @@
 // FWS Command Centre — Logout endpoint
-// Version: v1.0
+// Version: v1.1
 //
-// Clears the cc_session cookie by setting it expired, then redirects
-// to the login page.
+// v1.1: uses the shared clearCookieHeader() from lib/auth.js instead
+// of a hardcoded string, so it can never drift out of sync with the
+// cookie name/attributes login.js actually sets.
+
+const { clearCookieHeader } = require("../lib/auth");
 
 module.exports = async (req, res) => {
-  res.setHeader(
-    "Set-Cookie",
-    "cc_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
-  );
+  res.setHeader("Set-Cookie", clearCookieHeader());
   res.writeHead(302, { Location: "/login.html" });
   res.end();
 };
