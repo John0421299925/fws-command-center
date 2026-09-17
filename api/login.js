@@ -1,23 +1,18 @@
 // FWS Command Centre — Login endpoint
-// Version: v1.0
+// Version: v2.0
 //
-// Checks the submitted password against CC_PASSWORD (Vercel env var).
-// On success, sets a signed, httpOnly session cookie valid for 30 days.
-// The cookie is a simple "expiry.signature" pair, where signature is an
-// HMAC-SHA256 of the expiry timestamp using CC_PASSWORD as the secret —
-// no database or session store needed. Every protected endpoint (and
-// each page's own client-side check) verifies this same cookie the
-// same way; see the top of any protected api/*.js file for the
-// matching verification snippet.
+// v2.0: REPLACED the single shared CC_PASSWORD with real per-person
+// accounts. Each person (John, James, and any future sales rep) has
+// their own username/password, defined in the new CC_USERS env var —
+// see lib/auth.js for the exact JSON shape and why this matters (the
+// Sales Command Centre needs to know WHO is logged in, not just
+// whether *someone* knows the password, so each rep's dashboard can
+// be scoped server-side to their own clients only).
+// v1.1 (superseded): showed the real server error text on failure
+// instead of a hardcoded "Incorrect password" message — that
+// behaviour is preserved here.
 
-const crypto = require("crypto");
-
-const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const COOKIE_NAME = "cc_session";
-
-function signExpiry(expiry, secret) {
-  return crypto.createHmac("sha256", secret).update(String(expiry)).digest("hex");
-}
+const { findUser, createSessionCookieValue, sessionCookieHeader, SESSION_MAX_AGE_MS } = require("../lib/auth");
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
@@ -25,32 +20,29 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const { password } = req.body || {};
-  const expectedPassword = process.env.CC_PASSWORD;
-
-  if (!expectedPassword) {
-    res.status(500).json({ status: "error", error: "CC_PASSWORD is not configured" });
+  if (!process.env.CC_USERS) {
+    res.status(500).json({ status: "error", error: "CC_USERS is not configured" });
+    return;
+  }
+  if (!process.env.CC_SESSION_SECRET) {
+    res.status(500).json({ status: "error", error: "CC_SESSION_SECRET is not configured" });
     return;
   }
 
-  const providedBuf = Buffer.from(String(password || ""));
-  const expectedBuf = Buffer.from(String(expectedPassword));
-  const matches =
-    providedBuf.length === expectedBuf.length &&
-    crypto.timingSafeEqual(providedBuf, expectedBuf);
+  const { username, password } = req.body || {};
+  const user = findUser(username, password);
 
-  if (!matches) {
-    res.status(401).json({ status: "error", error: "Incorrect password" });
+  if (!user) {
+    res.status(401).json({ status: "error", error: "Incorrect username or password" });
     return;
   }
 
-  const expiry = Date.now() + SESSION_MAX_AGE_MS;
-  const signature = signExpiry(expiry, expectedPassword);
-  const cookieValue = `${expiry}.${signature}`;
-
-  res.setHeader(
-    "Set-Cookie",
-    `${COOKIE_NAME}=${cookieValue}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${Math.floor(SESSION_MAX_AGE_MS / 1000)}`
-  );
-  res.status(200).json({ status: "ok" });
+  const cookieValue = createSessionCookieValue(user);
+  res.setHeader("Set-Cookie", sessionCookieHeader(cookieValue, Math.floor(SESSION_MAX_AGE_MS / 1000)));
+  res.status(200).json({
+    status: "ok",
+    name: user.name,
+    role: user.role || "rep",
+    canEditRateCard: Boolean(user.canEditRateCard),
+  });
 };
