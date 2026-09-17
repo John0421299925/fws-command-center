@@ -3,7 +3,7 @@
 // v1.2: swapped the old inline single-shared-password cookie check
 //   for the shared verifySession() from lib/auth.js — required now
 //   that the Command Centre has moved to real per-person logins (see
-//   lib/auth.js / api/login.js). Restricted to admin/ops sessions —
+//   lib/auth.js / api/login.js). Restricted to admin-only —
 //   this creates real Xero drafts from any client's invoice, an
 //   operational task, not something a sales rep should be able to
 //   trigger from their own scoped view.
@@ -40,8 +40,8 @@ export default async function handler(req, res) {
   if (!session) {
     return res.status(401).json({ status: 'error', error: 'Not authenticated' });
   }
-  if (session.role !== 'admin' && session.role !== 'ops') {
-    return res.status(403).json({ status: 'error', error: 'Approving invoices is restricted to admin/ops accounts' });
+  if (session.role !== 'admin') {
+    return res.status(403).json({ status: 'error', error: 'Approving invoices is restricted to admin accounts' });
   }
 
   if (req.method === 'GET') {
