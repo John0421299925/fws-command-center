@@ -1,5 +1,13 @@
 // FWS Command Centre — Send Quote to Client Proxy
-// Version: v1.0
+// Version: v1.1
+//
+// v1.1: swapped the old inline single-shared-password cookie check
+// for the shared verifySession() from lib/auth.js — required now
+// that the Command Centre has moved to real per-person logins (see
+// lib/auth.js / api/login.js). No role restriction: sending a quote
+// to a client is core to a sales rep's actual job, same reasoning as
+// approve-quote.js and quotes-pending.js — any logged-in person
+// (admin, ops, or a future rep) can use this.
 //
 // Server-side proxy to the Auto Quotation Agent's
 // send_quote_to_client endpoint — the genuine "send to client" action.
@@ -9,28 +17,13 @@
 // UI is responsible for showing the person the exact recipient
 // address and getting explicit confirmation before ever calling this.
 
-const crypto = require("crypto");
+const { verifySession } = require("../lib/auth");
 
 const AUTO_QUOTATION_AGENT_BASE = "https://fws-auto-quotation-agent.vercel.app";
 
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || "";
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split(".");
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto
-    .createHmac("sha256", process.env.CC_PASSWORD || "")
-    .update(String(expiry))
-    .digest("hex");
-  const sigBuf = Buffer.from(signature || "");
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
-
 module.exports = async (req, res) => {
-  if (!isAuthenticated(req)) {
+  const session = verifySession(req);
+  if (!session) {
     res.status(401).json({ status: "error", error: "Not authenticated" });
     return;
   }
