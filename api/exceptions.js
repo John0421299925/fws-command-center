@@ -1,5 +1,11 @@
 // FWS Command Center — Exceptions & Alerts Feed
-// v2.2 — 14 Sept 2026
+// v2.3
+// v2.3: swapped the old inline single-shared-password cookie check
+//   for the shared verifySession() from lib/auth.js — required now
+//   that the Command Centre has moved to real per-person logins (see
+//   lib/auth.js / api/login.js). Restricted to admin/ops sessions —
+//   these are company-wide operational exceptions, not scoped to any
+//   one rep's own clients.
 // v2.2: Added the site-wide session-cookie check (see login.js /
 //   whoami.js in the project root) — this endpoint returns real
 //   invoice/ticket details, so it must reject unauthenticated
@@ -28,25 +34,12 @@
 //        that sat in Xero too long without completing.
 // v1.x: showed ALL open tickets — too noisy, superseded by v2.0.
 
-import crypto from 'crypto';
+import { verifySession } from '../lib/auth.js';
 
 const HUBSPOT_SERVICE_KEY = process.env.HUBSPOT_SERVICE_KEY;
 const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 const PORTAL_ID = '441953864';
 const OVERDUE_STAGE_ID = '3506368961';
-
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || '';
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
-  const sigBuf = Buffer.from(signature || '');
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
 
 async function hubspotPost(path, body) {
   const resp = await fetch(`${HUBSPOT_API_BASE}${path}`, {
@@ -126,8 +119,12 @@ async function getStuckXeroDrafts() {
 }
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const session = verifySession(req);
+  if (!session) {
     return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+  if (session.role !== 'admin' && session.role !== 'ops') {
+    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin/ops accounts' });
   }
 
   if (!HUBSPOT_SERVICE_KEY) {
