@@ -7,7 +7,7 @@
 // v1.2: swapped the old inline single-shared-password cookie check
 // for the shared verifySession() from lib/auth.js — required now
 // that the Command Centre has moved to real per-person logins (see
-// lib/auth.js / api/login.js). Also restricted to admin/ops sessions:
+// lib/auth.js / api/login.js). Also restricted to admin sessions:
 // this is company-wide payables across every supplier, not any one
 // rep's own book.
 // v1.1: Added the site-wide session-cookie check (see login.js /
@@ -62,8 +62,8 @@ export default async function handler(req, res) {
   if (!session) {
     return res.status(401).json({ status: 'error', error: 'Not authenticated' });
   }
-  if (session.role !== 'admin' && session.role !== 'ops') {
-    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin/ops accounts' });
+  if (session.role !== 'admin') {
+    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin accounts' });
   }
 
   try {
