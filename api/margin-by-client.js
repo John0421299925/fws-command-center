@@ -57,8 +57,8 @@ export default async function handler(req, res) {
   if (!session) {
     return res.status(401).json({ status: 'error', error: 'Not authenticated' });
   }
-  if (session.role !== 'admin' && session.role !== 'ops') {
-    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin/ops accounts' });
+  if (session.role !== 'admin') {
+    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin accounts' });
   }
 
   if (!process.env.HUBSPOT_SERVICE_KEY) {
