@@ -1,6 +1,13 @@
 // FWS Command Centre — Approve & Generate Quote Proxy
-// Version: v1.1
+// Version: v1.2
 //
+// v1.2: swapped the old inline single-shared-password cookie check
+// for the shared verifySession() from lib/auth.js — required now
+// that the Command Centre has moved to real per-person logins (see
+// lib/auth.js / api/login.js). No role restriction: quote generation
+// is core to a sales rep's actual job, same reasoning as
+// quotes-pending.js — any logged-in person (admin, ops, or a future
+// rep) can use this, not just admin/ops.
 // v1.1: Added the site-wide session-cookie check (see login.js /
 //       whoami.js) — this endpoint generates and files real client
 //       quotes, so it especially must not be callable without a valid
@@ -13,28 +20,13 @@
 // HubSpot, sends an email), even though the underlying agent endpoint
 // itself is a GET.
 
-const crypto = require("crypto");
+const { verifySession } = require("../lib/auth");
 
 const AUTO_QUOTATION_AGENT_BASE = "https://fws-auto-quotation-agent.vercel.app";
 
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || "";
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split(".");
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto
-    .createHmac("sha256", process.env.CC_PASSWORD || "")
-    .update(String(expiry))
-    .digest("hex");
-  const sigBuf = Buffer.from(signature || "");
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
-
 module.exports = async (req, res) => {
-  if (!isAuthenticated(req)) {
+  const session = verifySession(req);
+  if (!session) {
     res.status(401).json({ status: "error", error: "Not authenticated" });
     return;
   }
