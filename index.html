@@ -606,60 +606,85 @@
       cursor: pointer;
     }
     #period-select:hover { border-color: var(--muted); }
+    /* v1.18: rep-view single quote card, shown instead of the full
+       7-card admin grid for role !== 'admin' sessions. */
+    .rep-quote-card-wrap {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
   </style>
 </head>
 <body>
   <header>
     <div class="logo-wrap"><img src="/logo.jpg" alt="Future Waste Solutions" /></div>
     <h1>FWS Command Center</h1>
-    <p>Agent Health — live status of all automation systems</p>
+    <p id="header-subtitle">Agent Health — live status of all automation systems</p>
     <p style="margin-top:8px;"><a href="/api/logout" style="color: var(--muted); font-size: 0.8rem;">Log out</a></p>
   </header>
 
-  <div class="vital-signs-header">
-    <div class="section-heading">Business Vital Signs</div>
-    <select id="period-select" onchange="onPeriodChange(this.value)">
-      <option value="month">This month</option>
-      <option value="ytd">Year to date</option>
-      <option value="fy">Financial year to date</option>
-    </select>
+  <!-- v1.18: company-wide Business Vital Signs — admin only. Hidden
+       entirely (not just left empty) for rep sessions, since every
+       endpoint it calls now correctly 403s for role !== 'admin'. -->
+  <div id="admin-vital-signs-section">
+    <div class="vital-signs-header">
+      <div class="section-heading">Business Vital Signs</div>
+      <select id="period-select" onchange="onPeriodChange(this.value)">
+        <option value="month">This month</option>
+        <option value="ytd">Year to date</option>
+        <option value="fy">Financial year to date</option>
+      </select>
+    </div>
+    <div class="vital-signs-grid" id="vital-signs-grid">
+      <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Largest supplier (payables)</p><p class="value">…</p></div>
+      <div class="vital-card invoice-vital"><p class="label">Invoices awaiting approval</p><p class="value">…</p></div>
+      <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
+    </div>
+
+    <details class="drilldown">
+      <summary>Margin by client</summary>
+      <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <details class="drilldown">
+      <summary>Revenue by client &amp; waste type</summary>
+      <table id="revenue-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <details class="drilldown">
+      <summary>Receivables aging</summary>
+      <table id="aging-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <details class="drilldown">
+      <summary>Payables by supplier (aging)</summary>
+      <table id="payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <details class="drilldown">
+      <summary>Invoices awaiting approval</summary>
+      <table id="awaiting-approval-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
   </div>
-  <div class="vital-signs-grid" id="vital-signs-grid">
-    <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
-    <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
-    <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
-    <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
-    <div class="vital-card"><p class="label">Largest supplier (payables)</p><p class="value">…</p></div>
-    <div class="vital-card invoice-vital"><p class="label">Invoices awaiting approval</p><p class="value">…</p></div>
-    <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
+
+  <!-- v1.18: rep-view — a single Quotes card, shown instead of the
+       admin section above for role !== 'admin' sessions. Same green
+       glow styling, same click-through, just not embedded in the
+       7-card grid that pulls company-wide financial data. -->
+  <div id="rep-quotes-section" style="display:none;">
+    <div class="section-heading">Your Sales Centre</div>
+    <div class="rep-quote-card-wrap">
+      <a class="vital-card quote-vital" href="/quote-approvals.html" id="rep-quote-card" style="display:block; max-width:280px;">
+        <p class="label">Quotes awaiting approval</p>
+        <p class="value">…</p>
+      </a>
+    </div>
   </div>
-
-  <details class="drilldown">
-    <summary>Margin by client</summary>
-    <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <details class="drilldown">
-    <summary>Revenue by client &amp; waste type</summary>
-    <table id="revenue-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <details class="drilldown">
-    <summary>Receivables aging</summary>
-    <table id="aging-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <details class="drilldown">
-    <summary>Payables by supplier (aging)</summary>
-    <table id="payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <details class="drilldown">
-    <summary>Invoices awaiting approval</summary>
-    <table id="awaiting-approval-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
-  </details>
-
-  <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
 
   <div class="grid" id="agent-grid">
     <div class="card">
@@ -678,10 +703,10 @@
     <a class="launcher-tile" href="https://app.hubspot.com/" target="_blank" rel="noopener">
       <span class="icon">🧭</span> HubSpot
     </a>
-    <a class="launcher-tile" href="https://go.xero.com/" target="_blank" rel="noopener">
+    <a class="launcher-tile admin-only-tile" href="https://go.xero.com/" target="_blank" rel="noopener">
       <span class="icon">💰</span> Xero
     </a>
-    <a class="launcher-tile" href="https://vercel.com/john0421299925s-projects" target="_blank" rel="noopener">
+    <a class="launcher-tile admin-only-tile" href="https://vercel.com/john0421299925s-projects" target="_blank" rel="noopener">
       <span class="icon">▲</span> Vercel
     </a>
     <a class="launcher-tile" href="https://outlook.office.com/mail/" target="_blank" rel="noopener">
@@ -692,22 +717,33 @@
     </a>
   </div>
 
-  <div class="section-heading">Rate Card</div>
-  <div class="gated-note">John &amp; Christine only — these tools write directly to HubSpot pricing</div>
-  <div class="launcher-grid">
-    <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-update.html" target="_blank" rel="noopener">
-      <div class="title-row">⚡ Update a Service Price</div>
-      <div class="desc">Quick single-price change — cascading dropdown</div>
-    </a>
-    <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-admin.html" target="_blank" rel="noopener">
-      <div class="title-row">📋 Rate Card Admin Tool</div>
-      <div class="desc">Browse &amp; edit, new service, bulk import/export</div>
-    </a>
+  <!-- v1.18: Rate Card — visibility now driven by the session's
+       canEditRateCard flag specifically, NOT by role. This is what
+       lets Christine (role "rep", canEditRateCard true) see it while
+       Stuart (role "rep", canEditRateCard false) does not, and it
+       still shows correctly for admins (John, James) too. -->
+  <div id="rate-card-section">
+    <div class="section-heading">Rate Card</div>
+    <div class="gated-note">Write access — these tools write directly to HubSpot pricing</div>
+    <div class="launcher-grid">
+      <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-update.html" target="_blank" rel="noopener">
+        <div class="title-row">⚡ Update a Service Price</div>
+        <div class="desc">Quick single-price change — cascading dropdown</div>
+      </a>
+      <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-admin.html" target="_blank" rel="noopener">
+        <div class="title-row">📋 Rate Card Admin Tool</div>
+        <div class="desc">Browse &amp; edit, new service, bulk import/export</div>
+      </a>
+    </div>
   </div>
 
-  <div class="section-heading" id="exceptions-heading">Exceptions &amp; Alerts</div>
-  <div class="exceptions-list" id="exceptions-list">
-    <div class="exceptions-empty">Loading open tickets…</div>
+  <!-- v1.18: Exceptions & Alerts — admin only, same reasoning as the
+       Business Vital Signs section above. -->
+  <div id="exceptions-section">
+    <div class="section-heading" id="exceptions-heading">Exceptions &amp; Alerts</div>
+    <div class="exceptions-list" id="exceptions-list">
+      <div class="exceptions-empty">Loading open tickets…</div>
+    </div>
   </div>
 
 
@@ -743,23 +779,89 @@
   </div>
 
   <script>
-    // v1.15: check login before anything else runs. If there's no
-    // valid session, bounce to the login page rather than showing a
-    // shell full of permanently-loading placeholders. This is a UX
-    // convenience — the real protection is server-side on every
-    // api/*.js endpoint.
+    // v1.18: role-aware rendering. checkAuth() now stores the full
+    // session (role, canEditRateCard, name) rather than just checking
+    // for a 401, and initPage() decides what to show/fetch based on
+    // it — admin sees the full company-wide dashboard exactly as
+    // before, a rep session (Christine, Stuart, future reps) sees a
+    // stripped-down view (just their Quotes card + Agent Health),
+    // and Rate Card visibility is driven by canEditRateCard
+    // specifically, independent of role, so Christine (rep +
+    // canEditRateCard true) still sees it while Stuart doesn't.
+    let currentSession = null;
+
     (async function checkAuth() {
       try {
         const resp = await fetch('/api/whoami');
         if (resp.status === 401) {
           window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname);
+          return;
         }
+        const data = await resp.json();
+        currentSession = data;
+        initPage(currentSession);
       } catch (err) {
-        // If the check itself fails, let the page continue rather than
-        // trap the person on a broken redirect loop — the individual
-        // data calls will still fail safely with 401s.
+        // If the check itself fails, let the page continue with
+        // whatever's already visible rather than trap the person on a
+        // broken redirect loop — individual data calls will still
+        // fail safely with 401s/403s.
+        initPage(null);
       }
     })();
+
+    function initPage(session) {
+      const isAdmin = session && session.role === 'admin';
+      const canEditRateCard = Boolean(session && session.canEditRateCard);
+
+      document.getElementById('admin-vital-signs-section').style.display = isAdmin ? '' : 'none';
+      document.getElementById('exceptions-section').style.display = isAdmin ? '' : 'none';
+      document.getElementById('rep-quotes-section').style.display = isAdmin ? 'none' : '';
+      document.getElementById('rate-card-section').style.display = canEditRateCard ? '' : 'none';
+
+      // v1.18: Xero and Vercel launcher tiles are only relevant to
+      // admins — a rep has no reason to jump into either, so they're
+      // hidden rather than shown as dead-end links.
+      document.querySelectorAll('.admin-only-tile').forEach((el) => {
+        el.style.display = isAdmin ? '' : 'none';
+      });
+
+      if (session && session.name) {
+        document.getElementById('header-subtitle').textContent =
+          isAdmin ? 'Agent Health — live status of all automation systems' : `Welcome, ${session.name}`;
+      }
+
+      loadStatus();
+      setInterval(loadStatus, 60000);
+
+      if (isAdmin) {
+        loadVitalSigns();
+        setInterval(loadVitalSigns, 300000);
+        loadExceptions();
+        setInterval(loadExceptions, 60000);
+      } else {
+        loadRepQuoteCard();
+        setInterval(loadRepQuoteCard, 60000);
+      }
+    }
+
+    // v1.18: lightweight rep-view card — only calls quotes-pending
+    // (already open to any logged-in role), never any of the
+    // admin-only endpoints.
+    async function loadRepQuoteCard() {
+      const card = document.getElementById('rep-quote-card');
+      try {
+        const res = await fetch('/api/quotes-pending');
+        const data = await res.json();
+        if (data.status === 'ok') {
+          const count = data.quotes.length;
+          card.innerHTML = `<p class="label">Quotes awaiting approval</p><p class="value">${count}</p><p class="sub">${count > 0 ? 'Click to review' : 'All caught up'}</p>`;
+        } else {
+          card.innerHTML = `<p class="label">Quotes awaiting approval</p><p class="value">—</p><p class="sub">Could not load</p>`;
+        }
+      } catch (err) {
+        card.innerHTML = `<p class="label">Quotes awaiting approval</p><p class="value">—</p><p class="sub">Could not load</p>`;
+      }
+    }
 
     async function loadStatus() {
       const grid = document.getElementById('agent-grid');
@@ -810,10 +912,6 @@
         lastChecked.textContent = 'Refresh failed — try again';
       }
     }
-
-    loadStatus();
-    // Auto-refresh every 60 seconds
-    setInterval(loadStatus, 60000);
 
     function timeAgo(isoString) {
       if (!isoString) return '';
@@ -890,9 +988,6 @@
         list.innerHTML = '<div class="exceptions-empty">Could not load open tickets. Refresh to try again.</div>';
       }
     }
-
-    loadExceptions();
-    setInterval(loadExceptions, 60000);
 
     // v1.17: period selector state — only Revenue/Blended Margin (and
     // their two drill-downs) respond to this; every other card on the
@@ -1100,9 +1195,6 @@
         console.error('loadVitalSigns failed:', err);
       }
     }
-
-    loadVitalSigns();
-    setInterval(loadVitalSigns, 300000);
   </script>
 </body>
 </html>
