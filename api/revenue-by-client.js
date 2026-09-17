@@ -2,12 +2,21 @@
 // FWS Command Center — Revenue by Client
 // Deploy as: api/revenue-by-client.js
 // ================================================================
-// Version: v1.1
+// Version: v1.2
+//
+// v1.2: FIX — same real security gap found and fixed in
+// margin-by-client.js: this file had NO authentication check at all,
+// not even the old shared-password check. Added the same session
+// check now used everywhere else, restricted to admin/ops roles
+// since this is company-wide revenue across every client, not any
+// one rep's own book (a future rep-scoped variant would be a
+// separate endpoint reusing the same helpers below, filtered to the
+// logged-in rep's own clients).
 //
 // PURPOSE: the second piece of the "Business Vital Signs" card —
 // revenue per client, sorted highest first, plus each client's share
 // of total revenue (concentration risk — flagged once a single client
-// crosses 20%, the threshold multiple industry sources agree marks
+// crosses 20%, the threshold multiple independent sources agree marks
 // real dependency exposure), and a revenue-by-waste-type breakdown
 // using the GL code already sitting on each line item (hs_sku) — no
 // new data needed, same field webhook.js already persists.
@@ -26,6 +35,7 @@
 // through now) when neither period nor from/to is given.
 // ================================================================
 
+import { verifySession } from '../lib/auth.js';
 import { fetchPassedInvoices, getClientCompany, getLineItemsForInvoice, resolvePeriod } from '../lib/hubspotInvoiceData.js';
 
 // Multiple independent sources agree: a single client above ~20-25%
@@ -33,6 +43,14 @@ import { fetchPassedInvoices, getClientCompany, getLineItemsForInvoice, resolveP
 const CONCENTRATION_RISK_THRESHOLD_PERCENT = 20;
 
 export default async function handler(req, res) {
+  const session = verifySession(req);
+  if (!session) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+  if (session.role !== 'admin' && session.role !== 'ops') {
+    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin/ops accounts' });
+  }
+
   if (!process.env.HUBSPOT_SERVICE_KEY) {
     return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
   }
