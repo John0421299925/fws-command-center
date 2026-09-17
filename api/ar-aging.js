@@ -2,8 +2,17 @@
 // FWS Command Center — Accounts Receivable Aging
 // Deploy as: api/ar-aging.js
 // ================================================================
-// Version: v1.1
+// Version: v1.2
 //
+// v1.2: swapped the old inline single-shared-password cookie check
+// for the new shared verifySession() from lib/auth.js — required now
+// that the Command Centre has moved to real per-person logins (see
+// lib/auth.js / api/login.js). Also now checks the session's role:
+// this endpoint returns company-wide receivables across every
+// client, not any one rep's own book, so it's restricted to
+// admin/ops sessions — a future "rep" session (e.g. Stuart's) should
+// only ever see their own scoped Sales CC data, not the whole
+// company's AR.
 // v1.1: Added the site-wide session-cookie check (see login.js /
 // whoami.js in the project root) — this endpoint returns real client
 // receivables data, so it must reject unauthenticated requests
@@ -33,24 +42,11 @@
 // Usage: GET /api/ar-aging
 // ================================================================
 
-import crypto from 'crypto';
+import { verifySession } from '../lib/auth.js';
 
 const XERO_READER_BASE_URL = process.env.XERO_READER_BASE_URL || 'https://fws-xero-reader.vercel.app';
 
 const AR_CONCENTRATION_RISK_THRESHOLD_PERCENT = 20;
-
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || '';
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split('.');
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto.createHmac('sha256', process.env.CC_PASSWORD || '').update(String(expiry)).digest('hex');
-  const sigBuf = Buffer.from(signature || '');
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
 
 function bucketFor(daysOverdue) {
   if (daysOverdue <= 0) return 'notYetDue';
@@ -61,8 +57,12 @@ function bucketFor(daysOverdue) {
 }
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const session = verifySession(req);
+  if (!session) {
     return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+  if (session.role !== 'admin' && session.role !== 'ops') {
+    return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin/ops accounts' });
   }
 
   try {
