@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Login
-  Version: v1.2
+  Version: v1.3
 
-  Single password gate for the whole Command Centre (pages and APIs).
-  Posts to /api/login, which sets a session cookie on success and
-  redirects back to wherever the person was trying to go.
+  Real per-person login (username + password), replacing the old
+  single shared password gate. Posts to /api/login, which sets a
+  session cookie carrying the person's identity on success and
+  redirects back to wherever they were trying to go.
 
   v1.1 - The error message shown on failure was hardcoded to
          "Incorrect password" regardless of what actually went wrong
@@ -15,6 +16,11 @@
   v1.2 - Added the FWS logo above the title, same treatment as
          index.html (white rounded card, since it's a white-background
          JPEG). Expects /logo.jpg in the repo root.
+  v1.3 - Added a username field. Each Command Centre user now has
+         their own account (see lib/auth.js), not just a shared
+         password — needed so the Sales Command Centre can scope each
+         rep's dashboard to their own data based on who's actually
+         logged in.
 -->
 <html lang="en">
 <head>
@@ -103,7 +109,8 @@
     <div class="logo-wrap"><img src="/logo.jpg" alt="Future Waste Solutions" /></div>
     <h1>FWS Command Centre</h1>
     <form id="login-form">
-      <input type="password" id="password" placeholder="Password" autofocus />
+      <input type="text" id="username" placeholder="Username" autofocus autocomplete="username" />
+      <input type="password" id="password" placeholder="Password" autocomplete="current-password" />
       <button type="submit" id="submit-btn">Log in</button>
       <div class="error-msg" id="error-msg"></div>
     </form>
@@ -127,7 +134,10 @@
         const resp = await fetch('/api/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: document.getElementById('password').value }),
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value,
+          }),
         });
         const data = await resp.json();
 
