@@ -1,6 +1,14 @@
 // FWS Command Centre — Pending Quote Approvals
-// Version: v1.1
+// Version: v1.2
 //
+// v1.2: swapped the old inline single-shared-password cookie check
+// for the shared verifySession() from lib/auth.js — required now
+// that the Command Centre has moved to real per-person logins (see
+// lib/auth.js / api/login.js). Restricted to admin/ops sessions for
+// now — this lists every quote ticket company-wide, not filtered to
+// any one rep. A future rep-scoped version would need each ticket's
+// owner checked against the logged-in rep's ownerId, which isn't
+// wired up yet.
 // v1.1: Added the site-wide session-cookie check (see login.js /
 //       whoami.js for how the cookie is created and verified) — this
 //       endpoint returns real client/pricing-adjacent data, so it must
@@ -12,31 +20,20 @@
 // comparison is ready for review. Uses the existing Command Centre
 // HubSpot Service Key (already has the "tickets" scope).
 
-const crypto = require("crypto");
+const { verifySession } = require("../lib/auth");
 
 const HUBSPOT_API_BASE = "https://api.hubapi.com";
 const QUOTATION_PIPELINE_ID = "2136460779";
 const QUOTATION_STAGE_COMPARING_QUOTES = "3704618465";
 
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || "";
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split(".");
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto
-    .createHmac("sha256", process.env.CC_PASSWORD || "")
-    .update(String(expiry))
-    .digest("hex");
-  const sigBuf = Buffer.from(signature || "");
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
-
 module.exports = async (req, res) => {
-  if (!isAuthenticated(req)) {
+  const session = verifySession(req);
+  if (!session) {
     res.status(401).json({ status: "error", error: "Not authenticated" });
+    return;
+  }
+  if (session.role !== "admin" && session.role !== "ops") {
+    res.status(403).json({ status: "error", error: "This view is company-wide and restricted to admin/ops accounts" });
     return;
   }
 
