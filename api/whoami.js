@@ -1,35 +1,22 @@
 // FWS Command Centre — Auth check endpoint
-// Version: v1.0
+// Version: v2.0
 //
-// Cheap endpoint every page calls on load to check whether the visitor
-// has a valid session; if not, the page redirects to /login.html. This
-// is a UX convenience only — the REAL protection is that every
-// data-bearing api/*.js file verifies the same cookie itself before
-// returning anything, so even if someone views a page's HTML directly
-// without running its JS, no real data is exposed.
+// v2.0: now returns the logged-in person's identity (name, ownerId,
+// role) instead of just {status:"ok"} — every page can use this to
+// greet the person by name, and — for the Sales Command Centre
+// specifically — to know which rep's data to display. This is still
+// only a UX convenience: the REAL protection is that every
+// data-bearing api/*.js file verifies the session itself via
+// lib/auth.js's verifySession() before returning anything, exactly
+// as before.
 
-const crypto = require("crypto");
-
-function isAuthenticated(req) {
-  const cookieHeader = req.headers.cookie || "";
-  const match = cookieHeader.match(/(?:^|;\s*)cc_session=([^;]+)/);
-  if (!match) return false;
-  const [expiryStr, signature] = decodeURIComponent(match[1]).split(".");
-  const expiry = Number(expiryStr);
-  if (!expiry || Date.now() > expiry) return false;
-  const expected = crypto
-    .createHmac("sha256", process.env.CC_PASSWORD || "")
-    .update(String(expiry))
-    .digest("hex");
-  const sigBuf = Buffer.from(signature || "");
-  const expBuf = Buffer.from(expected);
-  return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-}
+const { verifySession } = require("../lib/auth");
 
 module.exports = async (req, res) => {
-  if (!isAuthenticated(req)) {
+  const session = verifySession(req);
+  if (!session) {
     res.status(401).json({ status: "error", error: "Not authenticated" });
     return;
   }
-  res.status(200).json({ status: "ok" });
+  res.status(200).json({ status: "ok", ...session });
 };
