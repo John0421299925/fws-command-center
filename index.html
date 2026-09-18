@@ -781,14 +781,33 @@
           <option value="1">Once a year</option>
         </select>
       </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Price source</label>
+        <select id="calc-price-source" onchange="onCalcPriceSourceChange()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="ratecard">Rate card median</option>
+          <option value="manual">I'll enter it</option>
+        </select>
+      </div>
+      <div id="calc-manual-price-wrap" style="display:none;">
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">$/unit</label>
+        <input id="calc-manual-price" type="number" min="0" step="0.01" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:90px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Margin %</label>
+        <input id="calc-margin" type="number" min="0" max="100" step="0.1" value="15.5" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+      </div>
       <button onclick="addCalculatorLine()">Add to estimate</button>
     </div>
     <div id="calc-status" style="padding:0 16px 12px; font-size:0.8rem; color:var(--muted);"></div>
     <table id="calc-lines-table" style="display:none;">
-      <thead><tr><th>Waste type</th><th>Bin size</th><th>Qty</th><th>Frequency/yr</th><th>Median $/service</th><th>Est. annual</th><th></th></tr></thead>
+      <thead><tr><th>Waste type</th><th>Bin size</th><th>Qty</th><th>Freq/yr</th><th>$/unit</th><th>Margin</th><th>Est. annual revenue</th><th>Rep earning*</th><th></th></tr></thead>
       <tbody id="calc-lines-body"></tbody>
     </table>
-    <div style="padding:16px; text-align:right; font-size:1.1rem; font-weight:600;" id="calc-total">Estimated annual value: $0</div>
+    <div style="padding:16px; text-align:right;">
+      <div style="font-size:1.1rem; font-weight:600;" id="calc-total">Estimated annual revenue: $0</div>
+      <div style="font-size:0.95rem; color:var(--quote-green); margin-top:4px;" id="calc-earning-total">Rep earning potential*: $0</div>
+      <div style="font-size:0.72rem; color:var(--muted); margin-top:6px;">*at 40% of gross profit — the same formula used on the Market Opportunity cards above</div>
+    </div>
   </div>
 
   <div class="section-heading">Launcher</div>
@@ -975,6 +994,17 @@
       }
     }
 
+    function onCalcPriceSourceChange() {
+      const isManual = document.getElementById('calc-price-source').value === 'manual';
+      document.getElementById('calc-manual-price-wrap').style.display = isManual ? '' : 'none';
+    }
+
+    // Same fixed rep-share-of-gross-profit used on the Market
+    // Opportunity cards (api/market-opportunity.js) — kept identical
+    // so this calculator's "Rep earning" figure and that card's
+    // figures can never disagree about what a rep's share means.
+    const CALC_REP_SHARE_OF_GP_PERCENT = 40;
+
     let calculatorLines = [];
 
     async function addCalculatorLine() {
@@ -982,37 +1012,61 @@
       const binSize = document.getElementById('calc-bin-size').value.trim();
       const quantity = parseFloat(document.getElementById('calc-quantity').value) || 1;
       const frequencyPerYear = parseFloat(document.getElementById('calc-frequency').value);
+      const marginPercent = parseFloat(document.getElementById('calc-margin').value) || 0;
+      const priceSource = document.getElementById('calc-price-source').value;
       const status = document.getElementById('calc-status');
 
-      status.textContent = 'Looking up real rate card pricing…';
+      let unitPrice;
+      let priceLabel;
+      let priceNote = '';
 
-      try {
-        const url = '/api/rate-lookup?wasteType=' + encodeURIComponent(wasteType) + (binSize ? '&binSize=' + encodeURIComponent(binSize) : '');
-        const res = await fetch(url);
-        const data = await res.json();
-
-        if (data.status !== 'ok' || !data.sampleSize) {
-          status.textContent = data.note || 'Could not find pricing for that combination.';
+      if (priceSource === 'manual') {
+        unitPrice = parseFloat(document.getElementById('calc-manual-price').value);
+        if (!unitPrice || unitPrice <= 0) {
+          status.textContent = 'Enter a $/unit amount first.';
           return;
         }
+        priceLabel = money(unitPrice) + ' (manual)';
+        status.textContent = 'Using the price you entered — not looked up from the rate card.';
+      } else {
+        status.textContent = 'Looking up real rate card pricing…';
+        try {
+          const url = '/api/rate-lookup?wasteType=' + encodeURIComponent(wasteType) + (binSize ? '&binSize=' + encodeURIComponent(binSize) : '');
+          const res = await fetch(url);
+          const data = await res.json();
 
-        status.textContent = data.note;
-
-        const annual = data.medianPrice * quantity * frequencyPerYear;
-        calculatorLines.push({
-          wasteType,
-          binSize: data.binSize || '(any size)',
-          quantity,
-          frequencyPerYear,
-          medianPrice: data.medianPrice,
-          annual,
-        });
-
-        renderCalculatorLines();
-      } catch (err) {
-        status.textContent = 'Lookup failed — try again.';
-        console.error('addCalculatorLine failed:', err);
+          if (data.status !== 'ok' || !data.sampleSize) {
+            status.textContent = data.note || 'Could not find pricing for that combination.';
+            return;
+          }
+          unitPrice = data.medianPrice;
+          priceLabel = money(unitPrice);
+          priceNote = data.note;
+          status.textContent = priceNote;
+        } catch (err) {
+          status.textContent = 'Lookup failed — try again.';
+          console.error('addCalculatorLine failed:', err);
+          return;
+        }
       }
+
+      const annualRevenue = unitPrice * quantity * frequencyPerYear;
+      const grossProfit = annualRevenue * (marginPercent / 100);
+      const repEarning = grossProfit * (CALC_REP_SHARE_OF_GP_PERCENT / 100);
+
+      calculatorLines.push({
+        wasteType,
+        binSize: LITRE_BASED_WASTE_TYPES.has(wasteType) ? `${quantity}L` : (binSize || '(any size)'),
+        quantity,
+        frequencyPerYear,
+        unitPrice,
+        priceLabel,
+        marginPercent,
+        annualRevenue,
+        repEarning,
+      });
+
+      renderCalculatorLines();
     }
 
     function removeCalculatorLine(index) {
@@ -1024,10 +1078,12 @@
       const table = document.getElementById('calc-lines-table');
       const body = document.getElementById('calc-lines-body');
       const totalEl = document.getElementById('calc-total');
+      const earningTotalEl = document.getElementById('calc-earning-total');
 
       if (calculatorLines.length === 0) {
         table.style.display = 'none';
-        totalEl.textContent = 'Estimated annual value: $0';
+        totalEl.textContent = 'Estimated annual revenue: $0';
+        earningTotalEl.textContent = 'Rep earning potential*: $0';
         return;
       }
 
@@ -1038,13 +1094,17 @@
           <td>${line.binSize}</td>
           <td class="num">${line.quantity}</td>
           <td class="num">${line.frequencyPerYear}</td>
-          <td class="num">${money(line.medianPrice)}</td>
-          <td class="num">${money(line.annual)}</td>
+          <td class="num">${line.priceLabel}</td>
+          <td class="num">${line.marginPercent}%</td>
+          <td class="num">${money(line.annualRevenue)}</td>
+          <td class="num">${money(line.repEarning)}</td>
           <td><button onclick="removeCalculatorLine(${i})" style="padding:2px 8px; font-size:0.75rem;">Remove</button></td>
         </tr>`).join('');
 
-      const total = calculatorLines.reduce((sum, l) => sum + l.annual, 0);
-      totalEl.textContent = `Estimated annual value: ${money(total)}`;
+      const totalRevenue = calculatorLines.reduce((sum, l) => sum + l.annualRevenue, 0);
+      const totalEarning = calculatorLines.reduce((sum, l) => sum + l.repEarning, 0);
+      totalEl.textContent = `Estimated annual revenue: ${money(totalRevenue)}`;
+      earningTotalEl.textContent = `Rep earning potential*: ${money(totalEarning)}`;
     }
 
     async function loadMarketOpportunity() {
