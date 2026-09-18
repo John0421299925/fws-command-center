@@ -831,6 +831,90 @@
     </div>
   </div>
 
+  <!-- v1.24: Request a New Quote — lets a rep kick off a real quote
+       request straight from the Sales Command Centre, instead of
+       writing an email to quotes@futurewaste.com.au by hand. Calls
+       the Auto Quotation Agent's real submit_quote_request endpoint
+       via api/submit-quote-request.js (server-side proxy, avoiding
+       the same CORS issue solved elsewhere on this page). Two modes,
+       matching the agent's own two accepted request shapes exactly. -->
+  <div class="section-heading">Request a New Quote</div>
+  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
+    <summary>Start a new quote request</summary>
+    <div style="padding:16px;">
+      <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">How do you want to enter this?</label>
+        <select id="quote-req-mode" onchange="onQuoteReqModeChange()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="structured">Fill in the details</option>
+          <option value="freeform">Just describe it in a sentence</option>
+        </select>
+      </div>
+
+      <div id="quote-req-structured">
+        <div style="display:flex; flex-wrap:wrap; gap:12px;">
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Waste type *</label>
+            <input id="qr-waste-type" type="text" placeholder="e.g. General Waste" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:160px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Suburb *</label>
+            <input id="qr-suburb" type="text" placeholder="e.g. Newtown" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">State</label>
+            <input id="qr-state" type="text" value="NSW" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Container</label>
+            <input id="qr-container" type="text" placeholder="e.g. 660L" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:100px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Qty</label>
+            <input id="qr-container-qty" type="number" min="1" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Frequency</label>
+            <input id="qr-frequency" type="text" placeholder="e.g. Weekly" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:110px;" />
+          </div>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:12px;">
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client name</label>
+            <input id="qr-client-name" type="text" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:220px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client contact email</label>
+            <input id="qr-client-email" type="email" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:200px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Margin instruction</label>
+            <input id="qr-margin" type="text" placeholder="e.g. 20%" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:90px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Named SP contact (optional)</label>
+            <input id="qr-sp-contact" type="text" placeholder="e.g. Celeste" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">SP company hint</label>
+            <input id="qr-sp-company" type="text" placeholder="e.g. Remondis" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
+          </div>
+        </div>
+      </div>
+
+      <div id="quote-req-freeform" style="display:none;">
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Describe the job</label>
+        <textarea id="qr-freeform-text" rows="3" placeholder="e.g. Quote for a site in Newtown, 2 x 660L General waste bins weekly, margin 20%, send to Remondis" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-family:inherit;"></textarea>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin:8px 0 4px;">Client name (optional, more reliable than letting it guess)</label>
+        <input id="qr-freeform-client-name" type="text" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:280px;" />
+      </div>
+
+      <div style="margin-top:16px;">
+        <button onclick="submitQuoteRequest()" id="qr-submit-btn">Send request</button>
+      </div>
+      <div id="qr-status" style="margin-top:10px; font-size:0.85rem;"></div>
+    </div>
+  </div>
+
   <div class="section-heading">Launcher</div>
   <div class="launcher-grid">
     <a class="launcher-tile" href="https://app.hubspot.com/" target="_blank" rel="noopener">
@@ -1126,6 +1210,87 @@
       const totalEarning = calculatorLines.reduce((sum, l) => sum + l.repEarning, 0);
       totalEl.textContent = `Estimated annual revenue: ${money(totalRevenue)}`;
       earningTotalEl.textContent = `Rep earning potential*: ${money(totalEarning)}`;
+    }
+
+    // v1.24: Request a New Quote
+    function onQuoteReqModeChange() {
+      const isFreeform = document.getElementById('quote-req-mode').value === 'freeform';
+      document.getElementById('quote-req-structured').style.display = isFreeform ? 'none' : '';
+      document.getElementById('quote-req-freeform').style.display = isFreeform ? '' : 'none';
+    }
+
+    async function submitQuoteRequest() {
+      const mode = document.getElementById('quote-req-mode').value;
+      const status = document.getElementById('qr-status');
+      const btn = document.getElementById('qr-submit-btn');
+
+      let body = {};
+
+      if (mode === 'freeform') {
+        const freeformText = document.getElementById('qr-freeform-text').value.trim();
+        if (!freeformText) {
+          status.innerHTML = '<span style="color:var(--error)">Describe the job first.</span>';
+          return;
+        }
+        body.freeform_text = freeformText;
+        const clientName = document.getElementById('qr-freeform-client-name').value.trim();
+        if (clientName) body.client_name = clientName;
+      } else {
+        const wasteType = document.getElementById('qr-waste-type').value.trim();
+        const suburb = document.getElementById('qr-suburb').value.trim();
+        if (!wasteType || !suburb) {
+          status.innerHTML = '<span style="color:var(--error)">Waste type and Suburb are both required.</span>';
+          return;
+        }
+        body.waste_type = wasteType;
+        body.suburb = suburb;
+        const state = document.getElementById('qr-state').value.trim();
+        if (state) body.state = state;
+        const container = document.getElementById('qr-container').value.trim();
+        if (container) body.container = container;
+        const containerQty = document.getElementById('qr-container-qty').value.trim();
+        if (containerQty) body.container_qty = containerQty;
+        const frequency = document.getElementById('qr-frequency').value.trim();
+        if (frequency) body.frequency = frequency;
+        const clientName = document.getElementById('qr-client-name').value.trim();
+        if (clientName) body.client_name = clientName;
+        const clientEmail = document.getElementById('qr-client-email').value.trim();
+        if (clientEmail) body.client_contact_email = clientEmail;
+        const margin = document.getElementById('qr-margin').value.trim();
+        if (margin) body.margin_instruction = margin;
+        const spContact = document.getElementById('qr-sp-contact').value.trim();
+        if (spContact) body.named_sp_contact_first_name = spContact;
+        const spCompany = document.getElementById('qr-sp-company').value.trim();
+        if (spCompany) body.named_sp_company_hint = spCompany;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      status.innerHTML = '';
+
+      try {
+        const res = await fetch('/api/submit-quote-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+
+        if (data.status === 'ok') {
+          const ticketId = data.rfp_send_result?.hubspot_ticket_id;
+          status.innerHTML = `<span style="color:var(--ok)">RFP sent — quote request created${ticketId ? ` (ticket ${ticketId})` : ''}.</span>`;
+        } else if (data.status === 'needs_clarification') {
+          status.innerHTML = `<span style="color:var(--unknown)">${data.error || data.message || 'Could not confidently match the named contact — try without a specific person, or check the name.'}</span>`;
+        } else {
+          status.innerHTML = `<span style="color:var(--error)">${data.error || 'Something went wrong — try again.'}</span>`;
+        }
+      } catch (err) {
+        status.innerHTML = '<span style="color:var(--error)">Request failed — try again.</span>';
+        console.error('submitQuoteRequest failed:', err);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Send request';
+      }
     }
 
     async function loadMarketOpportunity() {
