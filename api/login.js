@@ -1,13 +1,13 @@
 // FWS Command Centre — Login endpoint
-// Version: v2.0
+// Version: v2.1
 //
+// v2.1: findUser() is now async (see lib/auth.js v2.0) — always
+// checks against the CURRENT live CC_USERS value from Vercel's API,
+// not a potentially-stale cached copy, so a password changed via
+// change-password.js is guaranteed to work on the very next login
+// attempt.
 // v2.0: REPLACED the single shared CC_PASSWORD with real per-person
-// accounts. Each person (John, James, and any future sales rep) has
-// their own username/password, defined in the new CC_USERS env var —
-// see lib/auth.js for the exact JSON shape and why this matters (the
-// Sales Command Centre needs to know WHO is logged in, not just
-// whether *someone* knows the password, so each rep's dashboard can
-// be scoped server-side to their own clients only).
+// accounts, defined in CC_USERS.
 // v1.1 (superseded): showed the real server error text on failure
 // instead of a hardcoded "Incorrect password" message — that
 // behaviour is preserved here.
@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
   }
 
   const { username, password } = req.body || {};
-  const user = findUser(username, password);
+  const user = await findUser(username, password);
 
   if (!user) {
     res.status(401).json({ status: "error", error: "Incorrect username or password" });
