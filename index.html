@@ -715,6 +715,21 @@
     </div>
   </div>
 
+  <!-- v1.20: Market Opportunity — deliberately visible to EVERY
+       logged-in role, admin and rep alike. This isn't sensitive
+       per-client data, it's the recruiting/motivation figure: real,
+       live-counted HubSpot enrichment data (Aged Care beds,
+       Retirement Village units) turned into a concrete rep earning
+       potential, using real historical rates John personally managed.
+       See api/market-opportunity.js for the full methodology and
+       sourcing notes. -->
+  <div class="section-heading">Market Opportunity</div>
+  <div class="vital-signs-grid" id="market-opportunity-grid">
+    <div class="vital-card"><p class="label">Aged Care — rep earning potential</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Retirement Villages — rep earning potential</p><p class="value">…</p></div>
+  </div>
+  <div class="vital-signs-note" id="market-opportunity-note"></div>
+
   <div class="section-heading">Launcher</div>
   <div class="launcher-grid">
     <a class="launcher-tile" href="https://app.hubspot.com/" target="_blank" rel="noopener">
@@ -865,6 +880,45 @@
       } else {
         loadMySales();
         setInterval(loadMySales, 300000);
+      }
+
+      // v1.20: Market Opportunity loads for EVERYONE, regardless of
+      // role — it's a recruiting/motivation figure, not gated data.
+      loadMarketOpportunity();
+      setInterval(loadMarketOpportunity, 3600000);
+    }
+
+    // v1.20: real, live-counted opportunity figures — see
+    // api/market-opportunity.js for the full methodology.
+    async function loadMarketOpportunity() {
+      const grid = document.getElementById('market-opportunity-grid');
+      const note = document.getElementById('market-opportunity-note');
+      try {
+        const res = await fetch('/api/market-opportunity');
+        const data = await res.json();
+
+        if (data.status !== 'ok') {
+          grid.children[0].innerHTML = '<p class="label">Aged Care — rep earning potential</p><p class="value">—</p><p class="sub">Could not load</p>';
+          grid.children[1].innerHTML = '<p class="label">Retirement Villages — rep earning potential</p><p class="value">—</p><p class="sub">Could not load</p>';
+          return;
+        }
+
+        const ac = data.agedCare;
+        const rv = data.retirementVillages;
+
+        grid.children[0].innerHTML = `
+          <p class="label">Aged Care — rep earning potential</p>
+          <p class="value">${money(ac.repRealistic)}</p>
+          <p class="sub">${ac.companyCount} sites, ${ac.totalBeds.toLocaleString()} beds @ ${money(ac.ratePerBedPerYear)}/bed — at ${data.assumptions.winRatePercent}% win rate</p>`;
+
+        grid.children[1].innerHTML = `
+          <p class="label">Retirement Villages — rep earning potential</p>
+          <p class="value">${money(rv.repRealistic)}</p>
+          <p class="sub">${rv.companyCount} sites, ${rv.totalUnits.toLocaleString()} units @ ${money(rv.ratePerUnitPerYear)}/unit — at ${data.assumptions.winRatePercent}% win rate</p>`;
+
+        note.textContent = `${data.note} Figures use real historical rates and a ${data.assumptions.marginPercent}% margin, ${data.assumptions.repShareOfGrossProfitPercent}% rep share of gross profit, and a ${data.assumptions.winRatePercent}% win rate — genuinely conservative, since the Aged Care rate is several years old and excludes streams like Grease Trap.`;
+      } catch (err) {
+        console.error('loadMarketOpportunity failed:', err);
       }
     }
 
