@@ -730,6 +730,60 @@
   </div>
   <div class="vital-signs-note" id="market-opportunity-note"></div>
 
+  <!-- v1.21: Prospect Value Calculator — lets any logged-in person
+       estimate a prospective site's annual value using REAL current
+       rate card pricing (via api/rate-lookup.js), not a separately
+       maintained guess. A rep builds up a running estimate line by
+       line (waste type, bin size, quantity, frequency), and each
+       line's price comes straight from the live rate card, so an
+       estimate can never quietly drift out of sync with what a real
+       client would actually be billed. Purely client-side accumulation
+       — nothing is saved server-side, this is a sandbox tool. -->
+  <div class="section-heading">Prospect Value Calculator</div>
+  <div class="drilldown" style="max-width:1000px; margin:0 auto 16px;" open>
+    <summary>Estimate a prospective site's annual value</summary>
+    <div style="padding:16px; display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Waste type</label>
+        <select id="calc-waste-type" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="General Waste">General Waste</option>
+          <option value="Co-Mingle">Co-Mingle</option>
+          <option value="Paper and Cardboard">Paper and Cardboard</option>
+          <option value="Green Waste">Green Waste</option>
+          <option value="Grease Trap">Grease Trap</option>
+          <option value="Liquid Waste">Liquid Waste</option>
+          <option value="Mattresses">Mattresses</option>
+          <option value="Soft Plastics">Soft Plastics</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Bin size (optional)</label>
+        <input id="calc-bin-size" type="text" placeholder="e.g. 1100L, 3.0m" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:130px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Quantity</label>
+        <input id="calc-quantity" type="number" min="1" value="1" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:80px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Frequency</label>
+        <select id="calc-frequency" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="52">Weekly</option>
+          <option value="26">Fortnightly</option>
+          <option value="12">Monthly</option>
+          <option value="4">Quarterly</option>
+          <option value="1">Once a year</option>
+        </select>
+      </div>
+      <button onclick="addCalculatorLine()">Add to estimate</button>
+    </div>
+    <div id="calc-status" style="padding:0 16px 12px; font-size:0.8rem; color:var(--muted);"></div>
+    <table id="calc-lines-table" style="display:none;">
+      <thead><tr><th>Waste type</th><th>Bin size</th><th>Qty</th><th>Frequency/yr</th><th>Median $/service</th><th>Est. annual</th><th></th></tr></thead>
+      <tbody id="calc-lines-body"></tbody>
+    </table>
+    <div style="padding:16px; text-align:right; font-size:1.1rem; font-weight:600;" id="calc-total">Estimated annual value: $0</div>
+  </div>
+
   <div class="section-heading">Launcher</div>
   <div class="launcher-grid">
     <a class="launcher-tile" href="https://app.hubspot.com/" target="_blank" rel="noopener">
@@ -890,6 +944,82 @@
 
     // v1.20: real, live-counted opportunity figures — see
     // api/market-opportunity.js for the full methodology.
+    // v1.21: Prospect Value Calculator — purely client-side line
+    // accumulation. Each line's price comes from a real rate-lookup
+    // call (api/rate-lookup.js), never invented or cached locally, so
+    // it always reflects current rate card pricing.
+    let calculatorLines = [];
+
+    async function addCalculatorLine() {
+      const wasteType = document.getElementById('calc-waste-type').value;
+      const binSize = document.getElementById('calc-bin-size').value.trim();
+      const quantity = parseFloat(document.getElementById('calc-quantity').value) || 1;
+      const frequencyPerYear = parseFloat(document.getElementById('calc-frequency').value);
+      const status = document.getElementById('calc-status');
+
+      status.textContent = 'Looking up real rate card pricing…';
+
+      try {
+        const url = '/api/rate-lookup?wasteType=' + encodeURIComponent(wasteType) + (binSize ? '&binSize=' + encodeURIComponent(binSize) : '');
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.status !== 'ok' || !data.sampleSize) {
+          status.textContent = data.note || 'Could not find pricing for that combination.';
+          return;
+        }
+
+        status.textContent = data.note;
+
+        const annual = data.medianPrice * quantity * frequencyPerYear;
+        calculatorLines.push({
+          wasteType,
+          binSize: data.binSize || '(any size)',
+          quantity,
+          frequencyPerYear,
+          medianPrice: data.medianPrice,
+          annual,
+        });
+
+        renderCalculatorLines();
+      } catch (err) {
+        status.textContent = 'Lookup failed — try again.';
+        console.error('addCalculatorLine failed:', err);
+      }
+    }
+
+    function removeCalculatorLine(index) {
+      calculatorLines.splice(index, 1);
+      renderCalculatorLines();
+    }
+
+    function renderCalculatorLines() {
+      const table = document.getElementById('calc-lines-table');
+      const body = document.getElementById('calc-lines-body');
+      const totalEl = document.getElementById('calc-total');
+
+      if (calculatorLines.length === 0) {
+        table.style.display = 'none';
+        totalEl.textContent = 'Estimated annual value: $0';
+        return;
+      }
+
+      table.style.display = '';
+      body.innerHTML = calculatorLines.map((line, i) => `
+        <tr>
+          <td>${line.wasteType}</td>
+          <td>${line.binSize}</td>
+          <td class="num">${line.quantity}</td>
+          <td class="num">${line.frequencyPerYear}</td>
+          <td class="num">${money(line.medianPrice)}</td>
+          <td class="num">${money(line.annual)}</td>
+          <td><button onclick="removeCalculatorLine(${i})" style="padding:2px 8px; font-size:0.75rem;">Remove</button></td>
+        </tr>`).join('');
+
+      const total = calculatorLines.reduce((sum, l) => sum + l.annual, 0);
+      totalEl.textContent = `Estimated annual value: ${money(total)}`;
+    }
+
     async function loadMarketOpportunity() {
       const grid = document.getElementById('market-opportunity-grid');
       const note = document.getElementById('market-opportunity-note');
