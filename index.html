@@ -151,6 +151,8 @@
       --unknown: #f59e0b;
       --quote-green: #39ff14;
       --invoice-yellow: #eaff00;
+      --margin-red: #ff073a;
+      --company-blue: #3b82f6;
     }
     * { box-sizing: border-box; }
     body {
@@ -355,6 +357,25 @@
     .vital-card.invoice-vital .label { color: var(--invoice-yellow); }
     .vital-card.invoice-vital .value { color: var(--invoice-yellow); }
     .vital-card.invoice-vital .sub { color: var(--invoice-yellow); }
+    /* v1.23: My Blended Margin on the rep view — fluorescent red,
+       John's explicit request, same glow treatment as the yellow
+       Invoices card and green Quotations card so all three read as
+       distinct, deliberately eye-catching categories. */
+    .vital-card.margin-vital {
+      background: var(--card-bg);
+      border: 1px solid var(--margin-red);
+      box-shadow: 0 0 12px rgba(255,7,58,0.35);
+    }
+    .vital-card.margin-vital .label { color: var(--margin-red); }
+    .vital-card.margin-vital .value { color: var(--margin-red); }
+    .vital-card.margin-vital .sub { color: var(--margin-red); }
+    /* v1.23: Prospect Value Calculator — company blue border/glow,
+       John's explicit request, same visual language as the other
+       highlighted sections on this page. */
+    .calculator-highlight {
+      border-color: var(--company-blue) !important;
+      box-shadow: 0 0 12px rgba(59,130,246,0.35);
+    }
     .exceptions-list {
       max-width: 1000px;
       margin: 0 auto;
@@ -740,7 +761,7 @@
        client would actually be billed. Purely client-side accumulation
        — nothing is saved server-side, this is a sandbox tool. -->
   <div class="section-heading">Prospect Value Calculator</div>
-  <div class="drilldown" style="max-width:1000px; margin:0 auto 16px;" open>
+  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
     <summary>Estimate a prospective site's annual value</summary>
     <div style="padding:16px; display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
       <div>
@@ -1145,8 +1166,17 @@
     function setRepVitalCard(index, label, value, sub, flagClass) {
       const grid = document.getElementById('rep-vital-signs-grid');
       const card = grid.children[index];
-      const isQuoteCard = index === 2;
-      if (isQuoteCard) {
+      // v1.23: index 0 (My Revenue) and index 1 (My Blended Margin)
+      // always keep their own fluorescent colours (yellow, red),
+      // John's explicit request — same "category, not alarm" pattern
+      // already used for the amber Invoices card and green Quotations
+      // card, rather than conditionally switching to a "flagged"
+      // style. Index 2 (Quotes) stays green as before.
+      if (index === 0) {
+        card.className = 'vital-card invoice-vital';
+      } else if (index === 1) {
+        card.className = 'vital-card margin-vital';
+      } else if (index === 2) {
         card.className = 'vital-card quote-vital';
       } else {
         card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
