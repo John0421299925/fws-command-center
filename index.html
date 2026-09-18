@@ -672,18 +672,30 @@
     <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
   </div>
 
-  <!-- v1.18: rep-view — a single Quotes card, shown instead of the
-       admin section above for role !== 'admin' sessions. Same green
-       glow styling, same click-through, just not embedded in the
-       7-card grid that pulls company-wide financial data. -->
+  <!-- v1.20: rep-view — a real scoped mini dashboard (own revenue,
+       own margin, quotes) instead of just a single Quotes card.
+       Backed by the new api/my-sales.js, which reuses the exact same
+       calculation logic as the admin margin-by-client.js /
+       revenue-by-client.js, filtered to only this person's own
+       HubSpot-owned client companies. -->
   <div id="rep-quotes-section" style="display:none;">
-    <div class="section-heading">Your Sales Centre</div>
-    <div class="rep-quote-card-wrap">
-      <a class="vital-card quote-vital" href="/quote-approvals.html" id="rep-quote-card" style="display:block; max-width:280px;">
-        <p class="label">Quotes awaiting approval</p>
-        <p class="value">…</p>
-      </a>
+    <div class="vital-signs-header">
+      <div class="section-heading">Your Sales Centre</div>
+      <select id="rep-period-select" onchange="onPeriodChange(this.value)">
+        <option value="month">This month</option>
+        <option value="ytd">Year to date</option>
+        <option value="fy">Financial year to date</option>
+      </select>
     </div>
+    <div class="vital-signs-grid" id="rep-vital-signs-grid">
+      <div class="vital-card"><p class="label">My revenue, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">My blended margin</p><p class="value">…</p></div>
+      <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
+    </div>
+    <details class="drilldown">
+      <summary>My clients</summary>
+      <table id="my-clients-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
   </div>
 
   <!-- v1.19: Agent Health — admin only. A rep has no reason to see
@@ -794,6 +806,7 @@
     // specifically, independent of role, so Christine (rep +
     // canEditRateCard true) still sees it while Stuart doesn't.
     let currentSession = null;
+    let isAdminGlobal = false;
 
     (async function checkAuth() {
       try {
@@ -816,6 +829,7 @@
 
     function initPage(session) {
       const isAdmin = session && session.role === 'admin';
+      isAdminGlobal = isAdmin;
       const canEditRateCard = Boolean(session && session.canEditRateCard);
 
       document.getElementById('admin-vital-signs-section').style.display = isAdmin ? '' : 'none';
@@ -849,27 +863,72 @@
         loadExceptions();
         setInterval(loadExceptions, 60000);
       } else {
-        loadRepQuoteCard();
-        setInterval(loadRepQuoteCard, 60000);
+        loadMySales();
+        setInterval(loadMySales, 300000);
       }
     }
 
-    // v1.18: lightweight rep-view card — only calls quotes-pending
-    // (already open to any logged-in role), never any of the
-    // admin-only endpoints.
-    async function loadRepQuoteCard() {
-      const card = document.getElementById('rep-quote-card');
+    // v1.20: lightweight rep-view mini dashboard — own revenue, own
+    // margin, and quotes, all scoped server-side by my-sales.js to
+    // the logged-in rep's own HubSpot-owned client companies.
+    function setRepVitalCard(index, label, value, sub, flagClass) {
+      const grid = document.getElementById('rep-vital-signs-grid');
+      const card = grid.children[index];
+      const isQuoteCard = index === 2;
+      if (isQuoteCard) {
+        card.className = 'vital-card quote-vital';
+      } else {
+        card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
+      }
+      card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
+    }
+
+    async function loadMySales() {
+      const requestPeriod = selectedPeriod;
       try {
-        const res = await fetch('/api/quotes-pending');
-        const data = await res.json();
-        if (data.status === 'ok') {
-          const count = data.quotes.length;
-          card.innerHTML = `<p class="label">Quotes awaiting approval</p><p class="value">${count}</p><p class="sub">${count > 0 ? 'Click to review' : 'All caught up'}</p>`;
+        const [salesRes, quotesRes] = await Promise.all([
+          fetch('/api/my-sales?period=' + requestPeriod).then(r => r.json()),
+          fetch('/api/quotes-pending').then(r => r.json()),
+        ]);
+
+        if (requestPeriod !== selectedPeriod) return;
+
+        if (salesRes.status === 'ok') {
+          setRepVitalCard(0, `My revenue, ${salesRes.periodLabel}`, money(salesRes.totalRevenue), `${salesRes.clientCount} client${salesRes.clientCount === 1 ? '' : 's'}`);
+          const belowTarget = salesRes.blendedMarginPercent !== null && salesRes.blendedMarginPercent < salesRes.marginTargetPercent;
+          const marginSub = (belowTarget ? `below ${salesRes.marginTargetPercent}% target` : `target ${salesRes.marginTargetPercent}%`) + ` · ${salesRes.periodLabel}`;
+          setRepVitalCard(1, 'My blended margin', salesRes.blendedMarginPercent !== null ? salesRes.blendedMarginPercent.toFixed(1) + '%' : '—',
+            marginSub, belowTarget ? 'flagged' : null);
         } else {
-          card.innerHTML = `<p class="label">Quotes awaiting approval</p><p class="value">—</p><p class="sub">Could not load</p>`;
+          setRepVitalCard(0, 'My revenue', '—', 'Could not load');
+          setRepVitalCard(1, 'My blended margin', '—', 'Could not load');
+        }
+
+        if (quotesRes.status === 'ok') {
+          const count = quotesRes.quotes.length;
+          setRepVitalCard(2, 'Quotes awaiting approval', count, count > 0 ? 'Click to review' : 'All caught up');
+        } else {
+          setRepVitalCard(2, 'Quotes awaiting approval', '—', 'Could not load');
+        }
+
+        const table = document.getElementById('my-clients-table');
+        if (salesRes.status === 'ok' && salesRes.clients.length > 0) {
+          table.innerHTML = `
+            <thead><tr><th>Client</th><th>Revenue</th><th>Cost</th><th>Margin</th></tr></thead>
+            <tbody>${salesRes.clients.map(c => `
+              <tr class="${c.belowTarget ? 'risk' : ''}">
+                <td>${c.name}</td>
+                <td class="num">${money(c.revenue)}</td>
+                <td class="num">${money(c.cost)}</td>
+                <td class="num">${c.marginPercent !== null ? c.marginPercent + '%' : '—'}</td>
+              </tr>`).join('')}</tbody>`;
+        } else if (salesRes.status === 'ok') {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No passed invoices this period yet.</td></tr></tbody>';
+        } else {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
         }
       } catch (err) {
-        card.innerHTML = `<p class="label">Quotes awaiting approval</p><p class="value">—</p><p class="sub">Could not load</p>`;
+        console.error('loadMySales failed:', err);
       }
     }
 
@@ -1000,12 +1059,19 @@
     }
 
     // v1.17: period selector state — only Revenue/Blended Margin (and
-    // their two drill-downs) respond to this; every other card on the
-    // Vital Signs row is untouched and keeps loading as before.
+    // their two drill-downs) respond to this on the admin view; on
+    // the rep view (v1.20) it drives My Revenue/My Blended Margin the
+    // same way. Two separate <select> elements (admin's and the
+    // rep's) share this one variable and handler — only one is ever
+    // visible at a time, so there's no conflict.
     let selectedPeriod = 'month';
     function onPeriodChange(value) {
       selectedPeriod = value;
-      loadVitalSigns();
+      if (isAdminGlobal) {
+        loadVitalSigns();
+      } else {
+        loadMySales();
+      }
     }
 
     // v1.8: Business Vital Signs
