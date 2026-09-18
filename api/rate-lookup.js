@@ -1,1 +1,131 @@
 
+// ================================================================
+// FWS Command Center — Rate Card Lookup (for the prospect calculator)
+// Deploy as: api/rate-lookup.js
+// ================================================================
+// Version: v1.0
+//
+// PURPOSE: powers the Prospect Value Calculator on the Sales Command
+// Centre. Given a waste type (and optionally a bin size), looks up
+// REAL current pricing from the live rate card (the Services object —
+// the exact same source every invoice is actually priced from) and
+// returns the median/min/max client price found, rather than a
+// separately-maintained guessed number. This guarantees a rep's
+// estimate can never drift out of sync with what a client would
+// actually be billed — same principle as everywhere else in this
+// build: one source of truth, no duplicated pricing logic.
+//
+// Returns a RANGE (min/median/max), not a single number, because real
+// prices genuinely vary across sites/suppliers for the same waste
+// type and bin size — showing a spread is more honest than presenting
+// an isolated figure as if it were exact.
+//
+// If no exact bin-size match is found, falls back to every price for
+// that waste type regardless of size, and says so explicitly in the
+// response — never silently substitutes.
+//
+// Usage: GET /api/rate-lookup?wasteType=General+Waste&binSize=1100
+//   binSize is optional; omit it to see the full spread for a waste
+//   type across all sizes.
+// ================================================================
+
+import { verifySession } from '../lib/auth.js';
+
+const HUBSPOT_SERVICE_KEY = process.env.HUBSPOT_SERVICE_KEY;
+const HUBSPOT_API_BASE = 'https://api.hubapi.com';
+
+async function fetchClientPrices(filters) {
+  const resp = await fetch(`${HUBSPOT_API_BASE}/crm/v3/objects/services/search`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filterGroups: [{ filters }],
+      properties: ['unit_cost_to_client', 'bin_size'],
+      limit: 100,
+    }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`HubSpot search failed (${resp.status}): ${errText}`);
+  }
+  const data = await resp.json();
+  return (data.results || [])
+    .map((r) => parseFloat(r.properties.unit_cost_to_client))
+    .filter((v) => !isNaN(v) && v > 0);
+}
+
+function stats(prices) {
+  if (prices.length === 0) return null;
+  const sorted = [...prices].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  return {
+    sampleSize: sorted.length,
+    minPrice: Math.round(sorted[0] * 100) / 100,
+    medianPrice: Math.round(median * 100) / 100,
+    maxPrice: Math.round(sorted[sorted.length - 1] * 100) / 100,
+  };
+}
+
+export default async function handler(req, res) {
+  const session = verifySession(req);
+  if (!session) {
+    return res.status(401).json({ status: 'error', error: 'Not authenticated' });
+  }
+
+  if (!HUBSPOT_SERVICE_KEY) {
+    return res.status(500).json({ error: 'HUBSPOT_SERVICE_KEY not configured' });
+  }
+
+  const wasteType = req.query.wasteType;
+  const binSize = req.query.binSize;
+
+  if (!wasteType) {
+    return res.status(400).json({ status: 'error', error: 'wasteType query parameter is required' });
+  }
+
+  try {
+    let prices = [];
+    let usedFallback = false;
+
+    if (binSize) {
+      prices = await fetchClientPrices([
+        { propertyName: 'waste_type', operator: 'EQ', value: wasteType },
+        { propertyName: 'bin_size', operator: 'CONTAINS_TOKEN', value: binSize },
+      ]);
+    }
+
+    if (prices.length === 0) {
+      // Either no binSize was given, or the exact size had no matches
+      // — fall back to every price for this waste type regardless of
+      // size. Explicitly flagged, never silently substituted.
+      usedFallback = Boolean(binSize);
+      prices = await fetchClientPrices([{ propertyName: 'waste_type', operator: 'EQ', value: wasteType }]);
+    }
+
+    const priceStats = stats(prices);
+
+    if (!priceStats) {
+      return res.status(200).json({
+        status: 'ok',
+        wasteType,
+        binSize: binSize || null,
+        sampleSize: 0,
+        note: `No real rate card pricing found for "${wasteType}"${binSize ? ` (or for any bin size, after "${binSize}" had no exact match)` : ''} — cannot estimate.`,
+      });
+    }
+
+    return res.status(200).json({
+      status: 'ok',
+      wasteType,
+      binSize: binSize || null,
+      usedFallback,
+      ...priceStats,
+      note: usedFallback
+        ? `No exact match for bin size "${binSize}" — showing the price spread across all bin sizes for "${wasteType}" instead.`
+        : `Based on ${priceStats.sampleSize} real rate card ${priceStats.sampleSize === 1 ? 'entry' : 'entries'} for this exact waste type and bin size.`,
+    });
+  } catch (error) {
+    return res.status(500).json({ status: 'error', error: error.message });
+  }
+}
