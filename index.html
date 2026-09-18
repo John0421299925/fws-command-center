@@ -851,18 +851,19 @@
       </div>
 
       <div id="quote-req-structured">
-        <div style="display:flex; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Waste type *</label>
-            <input id="qr-waste-type" type="text" placeholder="e.g. General Waste" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:160px;" />
-          </div>
-          <div>
-            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Suburb *</label>
-            <input id="qr-suburb" type="text" placeholder="e.g. Newtown" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
-          </div>
-          <div>
-            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">State</label>
-            <input id="qr-state" type="text" value="NSW" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+            <select id="qr-waste-type" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+              <option value="General Waste">General Waste</option>
+              <option value="Co-Mingle">Co-Mingle</option>
+              <option value="Paper and Cardboard">Paper and Cardboard</option>
+              <option value="Green Waste">Green Waste</option>
+              <option value="Grease Trap">Grease Trap</option>
+              <option value="Liquid Waste">Liquid Waste</option>
+              <option value="Mattresses">Mattresses</option>
+              <option value="Soft Plastics">Soft Plastics</option>
+            </select>
           </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Container</label>
@@ -876,8 +877,23 @@
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Frequency</label>
             <input id="qr-frequency" type="text" placeholder="e.g. Weekly" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:110px;" />
           </div>
+          <button type="button" onclick="addQuoteReqLine()">Add line</button>
         </div>
-        <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:12px;">
+        <div id="qr-lines-status" style="font-size:0.78rem; color:var(--muted); margin-top:6px;"></div>
+        <table id="qr-lines-table" style="display:none; margin-top:8px;">
+          <thead><tr><th>Waste type</th><th>Container</th><th>Qty</th><th>Frequency</th><th></th></tr></thead>
+          <tbody id="qr-lines-body"></tbody>
+        </table>
+
+        <div style="border-top:1px solid var(--border); margin:16px 0; padding-top:12px; display:flex; flex-wrap:wrap; gap:12px;">
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Suburb *</label>
+            <input id="qr-suburb" type="text" placeholder="e.g. Newtown" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">State</label>
+            <input id="qr-state" type="text" value="NSW" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+          </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client name</label>
             <input id="qr-client-name" type="text" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:220px;" />
@@ -1212,7 +1228,55 @@
       earningTotalEl.textContent = `Rep earning potential*: ${money(totalEarning)}`;
     }
 
-    // v1.24: Request a New Quote
+    // v1.25: multiple waste-type lines per quote request. The real
+    // agent endpoint only accepts one waste_type per call (confirmed
+    // in its own documentation) — so a rep builds up several lines
+    // here (General Waste + Cardboard + Grease Trap, say), and
+    // submitting sends one request per line, all sharing the same
+    // site/client details, rather than one combined call.
+    let quoteReqLines = [];
+
+    function addQuoteReqLine() {
+      const wasteType = document.getElementById('qr-waste-type').value;
+      const container = document.getElementById('qr-container').value.trim();
+      const containerQty = document.getElementById('qr-container-qty').value.trim();
+      const frequency = document.getElementById('qr-frequency').value.trim();
+
+      quoteReqLines.push({ wasteType, container, containerQty, frequency });
+      document.getElementById('qr-container').value = '';
+      document.getElementById('qr-container-qty').value = '';
+      document.getElementById('qr-frequency').value = '';
+      renderQuoteReqLines();
+    }
+
+    function removeQuoteReqLine(index) {
+      quoteReqLines.splice(index, 1);
+      renderQuoteReqLines();
+    }
+
+    function renderQuoteReqLines() {
+      const table = document.getElementById('qr-lines-table');
+      const body = document.getElementById('qr-lines-body');
+      const status = document.getElementById('qr-lines-status');
+
+      if (quoteReqLines.length === 0) {
+        table.style.display = 'none';
+        status.textContent = 'No lines added yet — add at least one waste type below.';
+        return;
+      }
+
+      table.style.display = '';
+      status.textContent = `${quoteReqLines.length} line${quoteReqLines.length === 1 ? '' : 's'} ready to send.`;
+      body.innerHTML = quoteReqLines.map((line, i) => `
+        <tr>
+          <td>${line.wasteType}</td>
+          <td>${line.container || '—'}</td>
+          <td class="num">${line.containerQty || '—'}</td>
+          <td>${line.frequency || '—'}</td>
+          <td><button onclick="removeQuoteReqLine(${i})" style="padding:2px 8px; font-size:0.75rem;">Remove</button></td>
+        </tr>`).join('');
+    }
+
     function onQuoteReqModeChange() {
       const isFreeform = document.getElementById('quote-req-mode').value === 'freeform';
       document.getElementById('quote-req-structured').style.display = isFreeform ? 'none' : '';
@@ -1224,73 +1288,104 @@
       const status = document.getElementById('qr-status');
       const btn = document.getElementById('qr-submit-btn');
 
-      let body = {};
-
       if (mode === 'freeform') {
         const freeformText = document.getElementById('qr-freeform-text').value.trim();
         if (!freeformText) {
           status.innerHTML = '<span style="color:var(--error)">Describe the job first.</span>';
           return;
         }
-        body.freeform_text = freeformText;
+        const body = { freeform_text: freeformText };
         const clientName = document.getElementById('qr-freeform-client-name').value.trim();
         if (clientName) body.client_name = clientName;
-      } else {
-        const wasteType = document.getElementById('qr-waste-type').value.trim();
-        const suburb = document.getElementById('qr-suburb').value.trim();
-        if (!wasteType || !suburb) {
-          status.innerHTML = '<span style="color:var(--error)">Waste type and Suburb are both required.</span>';
-          return;
+
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+        status.innerHTML = '';
+        try {
+          const result = await sendOneQuoteRequest(body);
+          status.innerHTML = formatQuoteRequestResult(result);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Send request';
         }
-        body.waste_type = wasteType;
-        body.suburb = suburb;
-        const state = document.getElementById('qr-state').value.trim();
-        if (state) body.state = state;
-        const container = document.getElementById('qr-container').value.trim();
-        if (container) body.container = container;
-        const containerQty = document.getElementById('qr-container-qty').value.trim();
-        if (containerQty) body.container_qty = containerQty;
-        const frequency = document.getElementById('qr-frequency').value.trim();
-        if (frequency) body.frequency = frequency;
-        const clientName = document.getElementById('qr-client-name').value.trim();
-        if (clientName) body.client_name = clientName;
-        const clientEmail = document.getElementById('qr-client-email').value.trim();
-        if (clientEmail) body.client_contact_email = clientEmail;
-        const margin = document.getElementById('qr-margin').value.trim();
-        if (margin) body.margin_instruction = margin;
-        const spContact = document.getElementById('qr-sp-contact').value.trim();
-        if (spContact) body.named_sp_contact_first_name = spContact;
-        const spCompany = document.getElementById('qr-sp-company').value.trim();
-        if (spCompany) body.named_sp_company_hint = spCompany;
+        return;
       }
+
+      // Structured mode — one call per line, sharing the same
+      // site/client fields across all of them.
+      if (quoteReqLines.length === 0) {
+        status.innerHTML = '<span style="color:var(--error)">Add at least one line first.</span>';
+        return;
+      }
+      const suburb = document.getElementById('qr-suburb').value.trim();
+      if (!suburb) {
+        status.innerHTML = '<span style="color:var(--error)">Suburb is required.</span>';
+        return;
+      }
+
+      const commonFields = {};
+      const state = document.getElementById('qr-state').value.trim();
+      if (state) commonFields.state = state;
+      const clientName = document.getElementById('qr-client-name').value.trim();
+      if (clientName) commonFields.client_name = clientName;
+      const clientEmail = document.getElementById('qr-client-email').value.trim();
+      if (clientEmail) commonFields.client_contact_email = clientEmail;
+      const margin = document.getElementById('qr-margin').value.trim();
+      if (margin) commonFields.margin_instruction = margin;
+      const spContact = document.getElementById('qr-sp-contact').value.trim();
+      if (spContact) commonFields.named_sp_contact_first_name = spContact;
+      const spCompany = document.getElementById('qr-sp-company').value.trim();
+      if (spCompany) commonFields.named_sp_company_hint = spCompany;
 
       btn.disabled = true;
       btn.textContent = 'Sending…';
-      status.innerHTML = '';
+      status.innerHTML = 'Sending ' + quoteReqLines.length + ' request' + (quoteReqLines.length === 1 ? '' : 's') + '…';
 
+      const results = [];
+      for (const line of quoteReqLines) {
+        const body = { ...commonFields, suburb, waste_type: line.wasteType };
+        if (line.container) body.container = line.container;
+        if (line.containerQty) body.container_qty = line.containerQty;
+        if (line.frequency) body.frequency = line.frequency;
+        const result = await sendOneQuoteRequest(body);
+        results.push({ wasteType: line.wasteType, result });
+      }
+
+      status.innerHTML = results.map(({ wasteType, result }) =>
+        `<div><strong>${wasteType}:</strong> ${formatQuoteRequestResult(result)}</div>`
+      ).join('');
+
+      btn.disabled = false;
+      btn.textContent = 'Send request';
+
+      // Clear the lines once sent, so the form is ready for a fresh
+      // request rather than accidentally resending the same ones.
+      quoteReqLines = [];
+      renderQuoteReqLines();
+    }
+
+    async function sendOneQuoteRequest(body) {
       try {
         const res = await fetch('/api/submit-quote-request', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await res.json();
-
-        if (data.status === 'ok') {
-          const ticketId = data.rfp_send_result?.hubspot_ticket_id;
-          status.innerHTML = `<span style="color:var(--ok)">RFP sent — quote request created${ticketId ? ` (ticket ${ticketId})` : ''}.</span>`;
-        } else if (data.status === 'needs_clarification') {
-          status.innerHTML = `<span style="color:var(--unknown)">${data.error || data.message || 'Could not confidently match the named contact — try without a specific person, or check the name.'}</span>`;
-        } else {
-          status.innerHTML = `<span style="color:var(--error)">${data.error || 'Something went wrong — try again.'}</span>`;
-        }
+        return await res.json();
       } catch (err) {
-        status.innerHTML = '<span style="color:var(--error)">Request failed — try again.</span>';
-        console.error('submitQuoteRequest failed:', err);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Send request';
+        console.error('sendOneQuoteRequest failed:', err);
+        return { status: 'error', error: 'Request failed — network or server error.' };
       }
+    }
+
+    function formatQuoteRequestResult(data) {
+      if (data.status === 'ok') {
+        const ticketId = data.rfp_send_result?.hubspot_ticket_id;
+        return `<span style="color:var(--ok)">RFP sent${ticketId ? ` (ticket ${ticketId})` : ''}.</span>`;
+      } else if (data.status === 'needs_clarification') {
+        return `<span style="color:var(--unknown)">${data.error || data.message || 'Could not confidently match the named contact.'}</span>`;
+      }
+      return `<span style="color:var(--error)">${data.error || 'Something went wrong.'}</span>`;
     }
 
     async function loadMarketOpportunity() {
