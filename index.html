@@ -686,16 +686,21 @@
     </div>
   </div>
 
-  <div class="grid" id="agent-grid">
-    <div class="card">
-      <div class="card-top"><h2>Loading agents...</h2><div class="dot loading"></div></div>
+  <!-- v1.19: Agent Health — admin only. A rep has no reason to see
+       the automation system's own health/version status, same
+       reasoning as Xero/Vercel in the Launcher. -->
+  <div id="agent-health-section">
+    <div class="grid" id="agent-grid">
+      <div class="card">
+        <div class="card-top"><h2>Loading agents...</h2><div class="dot loading"></div></div>
+      </div>
     </div>
-  </div>
 
-  <div class="refresh-note">
-    <span id="last-checked">Checking...</span>
-    &nbsp;·&nbsp;
-    <button onclick="loadStatus()">Refresh now</button>
+    <div class="refresh-note">
+      <span id="last-checked">Checking...</span>
+      &nbsp;·&nbsp;
+      <button onclick="loadStatus()">Refresh now</button>
+    </div>
   </div>
 
   <div class="section-heading">Launcher</div>
@@ -817,6 +822,7 @@
       document.getElementById('exceptions-section').style.display = isAdmin ? '' : 'none';
       document.getElementById('rep-quotes-section').style.display = isAdmin ? 'none' : '';
       document.getElementById('rate-card-section').style.display = canEditRateCard ? '' : 'none';
+      document.getElementById('agent-health-section').style.display = isAdmin ? '' : 'none';
 
       // v1.18: Xero and Vercel launcher tiles are only relevant to
       // admins — a rep has no reason to jump into either, so they're
@@ -830,8 +836,12 @@
           isAdmin ? 'Agent Health — live status of all automation systems' : `Welcome, ${session.name}`;
       }
 
-      loadStatus();
-      setInterval(loadStatus, 60000);
+      // v1.19: Agent Health is admin-only and hidden for reps — no
+      // reason to poll status.js at all when it's not being shown.
+      if (isAdmin) {
+        loadStatus();
+        setInterval(loadStatus, 60000);
+      }
 
       if (isAdmin) {
         loadVitalSigns();
