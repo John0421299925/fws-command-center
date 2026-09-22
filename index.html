@@ -1,6 +1,26 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
-     v1.17 — 15 Sept 2026
+     v1.26 — 22 Sept 2026
+     v1.26: ADDED a total row to the bottom of the "Receivables aging"
+       and "Payables by supplier (aging)" drill-down tables, per
+       John's request — so the real company-wide total AR/AP figure
+       is visible right there with the detail, not something you have
+       to add up yourself or infer from a percentage. Uses the
+       totalOutstanding/totalOwing figures ar-aging.js and ap-aging.js
+       already calculate and return, rather than re-summing
+       client-side — so this total can never drift from what those
+       endpoints' own JSON says. New .total-row CSS class (bolder
+       text, heavier top border) so it reads clearly as a sum, not
+       just another row.
+       NOTE: this top-of-file changelog had fallen behind — the
+       actual deployed code already contained versions up to v1.25
+       (rep-view Sales Centre, Prospect Value Calculator, Request a
+       New Quote, etc.), documented only as inline comments scattered
+       through the JS, never logged up here. Not retroactively
+       reconstructing that full history now (would be guessing at
+       exact dates/reasoning that should come from whoever actually
+       made those changes) — just flagging the gap and keeping this
+       header accurate going forward from v1.26 onward.
      v1.17: ADDED a period selector (This month / Year to date /
        Financial year to date) for the Revenue and Blended Margin
        cards only, per John's request. Backed by resolvePeriod() v1.1
@@ -541,6 +561,13 @@
     }
     .drilldown td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .drilldown tr.risk td:first-child { color: var(--error); font-weight: 500; }
+    /* v1.26: total row at the bottom of a drill-down table — bolder
+       text and a slightly heavier top border than a normal data row,
+       so it reads clearly as a sum rather than just another entry. */
+    .drilldown tr.total-row td {
+      font-weight: 600;
+      border-top: 2px solid var(--muted);
+    }
     .vital-signs-note {
       max-width: 1000px;
       margin: 12px auto 0;
@@ -1785,6 +1812,10 @@
 
         const agingTable = document.getElementById('aging-table');
         if (agingRes.status === 'ok' && agingRes.clients.length > 0) {
+          // v1.26: total row at the bottom, using the same
+          // totalOutstanding figure ar-aging.js already calculates
+          // and returns — not re-summed client-side, so it can never
+          // drift from what the card above it shows.
           agingTable.innerHTML = `
             <thead><tr><th>Client</th><th>Amount due</th><th>% of receivables</th><th>Oldest (days)</th></tr></thead>
             <tbody>${agingRes.clients.map(c => `
@@ -1793,13 +1824,23 @@
                 <td class="num">${money(c.amountDue)}</td>
                 <td class="num">${c.percentOfTotalReceivables}%</td>
                 <td class="num">${c.oldestDaysOverdue}</td>
-              </tr>`).join('')}</tbody>`;
+              </tr>`).join('')}
+              <tr class="total-row">
+                <td>Total</td>
+                <td class="num">${money(agingRes.totalOutstanding)}</td>
+                <td class="num">100%</td>
+                <td></td>
+              </tr>
+            </tbody>`;
         } else {
           agingTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding receivables found.</td></tr></tbody>';
         }
 
         const payablesTable = document.getElementById('payables-table');
         if (payablesRes.status === 'ok' && payablesRes.suppliers.length > 0) {
+          // v1.26: total row, same pattern as the aging table above —
+          // uses payablesRes.totalOwing (already calculated by
+          // ap-aging.js) rather than re-summing client-side.
           payablesTable.innerHTML = `
             <thead><tr><th>Supplier (as recorded in Xero)</th><th>Amount owing</th><th>% of payables</th><th>Oldest (days)</th></tr></thead>
             <tbody>${payablesRes.suppliers.map(s => `
@@ -1808,7 +1849,14 @@
                 <td class="num">${money(s.amountOwing)}</td>
                 <td class="num">${s.percentOfTotalPayables}%</td>
                 <td class="num">${s.oldestDaysOverdue}</td>
-              </tr>`).join('')}</tbody>`;
+              </tr>`).join('')}
+              <tr class="total-row">
+                <td>Total</td>
+                <td class="num">${money(payablesRes.totalOwing)}</td>
+                <td class="num">100%</td>
+                <td></td>
+              </tr>
+            </tbody>`;
         } else {
           payablesTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding payables found.</td></tr></tbody>';
         }
@@ -1835,3 +1883,4 @@
   </script>
 </body>
 </html>
+<script async data-explicit-opt-in="true" data-cookie-opt-in="true" data-deployment-id="dpl_BBzjxxRp25EtDV1dWUBu7F9x9a6X" src="https://vercel.live/_next-live/feedback/feedback.js"></script>
