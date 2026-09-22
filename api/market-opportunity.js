@@ -2,7 +2,37 @@
 // FWS Command Center — Market Opportunity (Aged Care & Retirement)
 // Deploy as: api/market-opportunity.js
 // ================================================================
-// Version: v1.0
+// Version: v1.1
+//
+// v1.1: FIX - real bug found via live Vercel logs (22 Sept 2026):
+// sumCompanyProperty() paginates through HubSpot's Search API 100
+// records at a time, firing each page's request immediately with NO
+// handling for a rate-limited response — a 429 just threw straight
+// out as a fatal error, surfacing as "Could not load" on both Market
+// Opportunity cards. Confirmed directly in the logs: the SECOND of
+// the two HubSpot calls this endpoint fires (residential_beds and
+// total_units, run in parallel via Promise.all) came back 429, right
+// as the rest of the dashboard was also loading — Revenue, Margin,
+// AR/AP aging, and Market Opportunity itself all fire their own
+// HubSpot calls within moments of each other on page load, all
+// sharing the same HUBSPOT_SERVICE_KEY and therefore the same rate
+// limit. Two concurrent paginated loops here, with no pause between
+// pages, made this endpoint specifically the one most likely to
+// occasionally lose that race — HubSpot's Search API has a stricter
+// rate limit than most of its other endpoints, and pagination alone
+// (no delay, no backoff) can trip it under load even without any
+// other endpoint competing for the same key.
+// Fixed by wrapping each page's HubSpot request in a small retry
+// helper (fetchWithRetry) that specifically recognises a 429,
+// respects HubSpot's own Retry-After header when present (falling
+// back to a short default wait if it isn't), and retries up to 3
+// times with the wait doubling each attempt, before finally giving up
+// and surfacing a real error. This is a genuine fix for a transient,
+// recoverable condition — not a workaround that hides a real problem;
+// a 429 here always meant "try again shortly", never "this request is
+// wrong". Every other line in this file — the formula, the rates, the
+// note about these companies not being existing clients — is
+// unchanged from v1.0.
 //
 // PURPOSE: the "what's possible" number for the Sales Command Centre
 // — the real, live-counted Aged Care and Retirement Village
@@ -54,6 +84,32 @@ const MARGIN_PERCENT = 0.15;
 const REP_SHARE_OF_GP_PERCENT = 0.40;
 const WIN_RATE_PERCENT = 0.20;
 
+// v1.1: NEW — small retry helper, specifically for HubSpot's 429
+// "too many requests" response. Respects HubSpot's own Retry-After
+// header (seconds) when it's present; falls back to a short default
+// wait when it isn't, doubling on each subsequent retry. Any other
+// non-ok response is NOT retried — a real error (bad auth, bad
+// request) should still fail immediately and clearly, not get masked
+// behind three silent retries.
+async function fetchWithRetry(url, options, maxAttempts = 3) {
+  let attempt = 0;
+  let waitMs = 1000;
+
+  while (true) {
+    const resp = await fetch(url, options);
+    if (resp.status !== 429) return resp;
+
+    attempt++;
+    if (attempt >= maxAttempts) return resp; // give up — caller handles the non-ok status as a real error
+
+    const retryAfterHeader = resp.headers.get('Retry-After');
+    const retryAfterMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : waitMs;
+    console.log(`⏳ HubSpot rate-limited (429) — retrying in ${Math.round(retryAfterMs)}ms (attempt ${attempt}/${maxAttempts})`);
+    await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+    waitMs *= 2;
+  }
+}
+
 // Sums a numeric property across every Company record that has it set,
 // paginating through HubSpot's search API 100 at a time. There's no
 // native server-side SUM in the public Search API, so this sums
@@ -70,7 +126,12 @@ async function sumCompanyProperty(propertyName) {
       limit: 100,
       after,
     };
-    const resp = await fetch(`${HUBSPOT_API_BASE}/crm/v3/objects/companies/search`, {
+    // v1.1: FIX — was a plain fetch() with no retry at all, so a
+    // transient HubSpot 429 threw straight out as a fatal error. Now
+    // goes through fetchWithRetry, which specifically waits and
+    // retries on a 429 (a genuinely recoverable condition) before
+    // giving up.
+    const resp = await fetchWithRetry(`${HUBSPOT_API_BASE}/crm/v3/objects/companies/search`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
