@@ -1,5 +1,32 @@
 // FWS Command Center — Agent Status Checker
-// v1.4
+// v1.5
+// v1.5: NEW — three real health checks added, directly prompted by
+//   two genuine incidents this week that nothing on this dashboard
+//   caught: fws-xero-reader's and clv-invoice-automation's Xero
+//   connections both silently lost their authorization on Xero's
+//   side (confirmed via each project's own /connections check), and
+//   separately, nothing here could confirm or contradict a stale
+//   belief that Agent 1 was paused — it had genuinely been
+//   re-enabled three days earlier. All three new agents ask the real
+//   thing a real question (is the subscription still there, is the
+//   tenant still connected) rather than just confirming a deployment
+//   responds, which every existing check already does and which
+//   would have stayed green through both incidents.
+//   Also improved checkAgent(): it now parses the JSON body even on
+//   a non-200 response (connection-check.js returns real error
+//   detail this way), and surfaces a genuine detail/error message
+//   from the body — data.detail, then data.error, then a
+//   Connected-to-X message built from organisationName on a
+//   successful connection-check.js response — rather than only ever
+//   showing a bare "HTTP 403" for anything that isn't a plain
+//   reachability check. A response with HTTP 200 but a JSON
+//   status !== "ok" (the shape all three new checks use, so a real
+//   problem still shows even though the endpoint itself responded
+//   fine) now maps to "error", not "unknown" — this is a strictly
+//   more correct read for the three new agents (a red dot instead of
+//   an ambiguous amber one) and changes nothing observable for the
+//   three original agents, none of which have ever returned anything
+//   but status "ok".
 // v1.4: swapped the old inline single-shared-password cookie check
 //   for the shared verifySession() from lib/auth.js — required now
 //   that the Command Centre has moved to real per-person logins (see
@@ -46,6 +73,36 @@ const AGENTS = [
     url: "https://fws-enrichment-agent.vercel.app/api/enrich?vertical=aged_care",
     manualNote: "Paused by John",
   },
+  // v1.5: NEW — real subscription check, not just reachability. See
+  // fws-hubspot-agent-a4be's own webhook.py v1.45 changelog for the
+  // full incident this was built to catch.
+  {
+    id: "agent1",
+    name: "Agent 1 (Mailbox Intake)",
+    url: "https://fws-hubspot-agent-a4be.vercel.app/api/agent1-health",
+    manualNote: null,
+  },
+  // v1.5: NEW — reuses clv-invoice-automation's existing
+  // connection-check.js (already built, already proven — not a new
+  // file on that side), which checks BOTH Xero's /connections list
+  // AND makes a real authenticated Organisation lookup, genuinely
+  // stronger evidence than a /connections check alone.
+  {
+    id: "xero-invoicing",
+    name: "Xero Connection — Invoicing",
+    url: "https://clv-invoice-automation.vercel.app/api/connection-check",
+    manualNote: null,
+  },
+  // v1.5: NEW — fws-xero-reader had no equivalent file at all (a
+  // genuinely empty api/ folder besides auth.js/callback.js/query.js,
+  // confirmed by checking directly rather than assuming), so this is
+  // a new file there: api/xero-health.js.
+  {
+    id: "xero-reader",
+    name: "Xero Connection — Reader",
+    url: "https://fws-xero-reader.vercel.app/api/xero-health",
+    manualNote: null,
+  },
 ];
 
 function cleanVersion(rawVersion) {
@@ -65,23 +122,45 @@ async function checkAgent(agent) {
     clearTimeout(timeout);
     const responseMs = Date.now() - started;
 
-    if (!res.ok) {
+    // v1.5: parse the JSON body regardless of res.ok — several of the
+    // new health checks (and connection-check.js) put a real,
+    // meaningful error message in the body even on a non-200 response,
+    // and that's far more useful than a bare HTTP status code.
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+
+    if (!data) {
       return {
         id: agent.id,
         name: agent.name,
-        status: "error",
+        status: res.ok ? "ok" : "error",
         detail: `HTTP ${res.status}`,
         responseMs,
         manualNote: agent.manualNote,
       };
     }
 
-    const data = await res.json();
+    const isOk = data.status === "ok";
+    // v1.5: prefer an explicit detail/error message from the body;
+    // fall back to a Connected-to-X message for connection-check.js's
+    // success shape (which has no top-level "detail" field), then
+    // finally to a bare HTTP status if nothing else is available.
+    const detail =
+      data.detail ||
+      data.error ||
+      (isOk && data.organisationName ? `Connected to "${data.organisationName}"` : undefined) ||
+      (!res.ok ? `HTTP ${res.status}` : undefined);
+
     return {
       id: agent.id,
       name: agent.name,
-      status: data.status === "ok" ? "ok" : "unknown",
+      status: isOk ? "ok" : "error",
       version: cleanVersion(data.version),
+      detail,
       responseMs,
       manualNote: agent.manualNote,
     };
