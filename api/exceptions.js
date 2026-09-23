@@ -1,5 +1,28 @@
 // FWS Command Center — Exceptions & Alerts Feed
-// v2.3
+// v2.4
+// v2.4: FIX - real bug found via live Vercel logs (23 Sept 2026):
+//   hubspotPost() had no handling at all for a HubSpot 429 — it threw
+//   immediately on any non-ok response, which the outer handler then
+//   turned into a generic, undetailed 500 ("Could not load open
+//   tickets" on the dashboard). Confirmed directly in the logs: this
+//   endpoint fires three parallel HubSpot searches (needs-review
+//   invoices, overdue tickets, stuck Xero drafts, all via
+//   Promise.all), in the exact same page-load burst as every other
+//   Business Vital Signs card — the same real rate-limit exposure
+//   already found and fixed yesterday in market-opportunity.js
+//   (confirmed in the same log burst: market-opportunity and
+//   quotes-pending both hit real 429s moments before this endpoint's
+//   own unhandled crash). Fixed the same way: hubspotPost() now goes
+//   through a small fetchWithRetry() helper that recognises a 429
+//   specifically, respects HubSpot's own Retry-After header when
+//   present (falling back to a short default wait otherwise), and
+//   retries up to 3 times before finally giving up — any other kind
+//   of error still fails immediately and clearly, exactly as before.
+//   This same rate-limit exposure likely exists on any Command Center
+//   endpoint that fires multiple HubSpot calls on page load and
+//   hasn't been through this fix yet — worth applying the same
+//   pattern proactively rather than waiting for each one to fail in
+//   turn.
 // v2.3: swapped the old inline single-shared-password cookie check
 //   for the shared verifySession() from lib/auth.js — required now
 //   that the Command Centre has moved to real per-person logins (see
@@ -41,8 +64,39 @@ const HUBSPOT_API_BASE = 'https://api.hubapi.com';
 const PORTAL_ID = '441953864';
 const OVERDUE_STAGE_ID = '3506368961';
 
+// v2.4: NEW — small retry helper, specifically for HubSpot's 429 "too
+// many requests" response. Respects HubSpot's own Retry-After header
+// (seconds) when it's present; falls back to a short default wait
+// when it isn't, doubling on each subsequent retry. Any other non-ok
+// response is NOT retried — a real error (bad auth, bad request)
+// should still fail immediately and clearly, not get masked behind
+// three silent retries. Same helper as market-opportunity.js v1.1.
+async function fetchWithRetry(url, options, maxAttempts = 3) {
+  let attempt = 0;
+  let waitMs = 1000;
+
+  while (true) {
+    const resp = await fetch(url, options);
+    if (resp.status !== 429) return resp;
+
+    attempt++;
+    if (attempt >= maxAttempts) return resp; // give up — caller handles the non-ok status as a real error
+
+    const retryAfterHeader = resp.headers.get('Retry-After');
+    const retryAfterMs = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : waitMs;
+    console.log(`⏳ HubSpot rate-limited (429) — retrying in ${Math.round(retryAfterMs)}ms (attempt ${attempt}/${maxAttempts})`);
+    await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
+    waitMs *= 2;
+  }
+}
+
 async function hubspotPost(path, body) {
-  const resp = await fetch(`${HUBSPOT_API_BASE}${path}`, {
+  // v2.4: FIX — was a plain fetch() with no retry at all, so a
+  // transient HubSpot 429 threw straight out as an unhandled 500.
+  // Now goes through fetchWithRetry, which specifically waits and
+  // retries on a 429 (a genuinely recoverable condition) before
+  // giving up.
+  const resp = await fetchWithRetry(`${HUBSPOT_API_BASE}${path}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${HUBSPOT_SERVICE_KEY}`,
