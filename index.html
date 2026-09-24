@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.30 — 24 Sept 2026
+     v1.30: NEW — a real pipeline-selector dropdown on Deal Pipeline,
+       per John's explicit request, in case another Deals pipeline
+       gets created down the track. Sits next to the existing
+       Company/person dropdown, populated from api/deals-pipeline.js's
+       own real pipeline list — nothing hardcoded here — defaulting
+       to Client Acquisition, so today's behaviour is unchanged unless
+       someone actually picks a different pipeline.
      v1.29 — 24 Sept 2026
      v1.29: FIX — real incident, the same day Deal Pipeline went live:
        up to ten different HubSpot-calling requests (status, vital
@@ -756,9 +764,19 @@
     <div id="admin-deals-section">
       <div class="vital-signs-header" style="margin-top:24px;">
         <div class="section-heading">Deal Pipeline</div>
-        <select id="deals-owner-select" onchange="onDealsOwnerChange(this.value)">
-          <option value="">Company (all)</option>
-        </select>
+        <div style="display:flex; gap:8px;">
+          <!-- v1.30: pipeline selector — per John's request, in case
+               another Deals pipeline gets created later. Populated
+               from api/deals-pipeline.js's own response (real
+               pipelines, nothing hardcoded here), defaulting to
+               Client Acquisition. -->
+          <select id="deals-pipeline-select" onchange="onDealsPipelineChange(this.value)">
+            <option value="">Client Acquisition (default)</option>
+          </select>
+          <select id="deals-owner-select" onchange="onDealsOwnerChange(this.value)">
+            <option value="">Company (all)</option>
+          </select>
+        </div>
       </div>
       <div class="vital-signs-grid" id="deals-vital-signs-grid">
         <div class="vital-card"><p class="label">Open pipeline</p><p class="value">…</p></div>
@@ -1245,20 +1263,31 @@
     // api/deals-pipeline.js. Owner dropdown is populated from the
     // endpoint's own response (only people who actually have open
     // deals right now), not a hardcoded list.
+    // v1.30: pipeline dropdown, same pattern — populated from the
+    // endpoint's own real pipeline list, empty value means "let the
+    // backend default to Client Acquisition".
     let selectedDealsOwnerId = '';
+    let selectedDealsPipelineId = '';
     function onDealsOwnerChange(value) {
       selectedDealsOwnerId = value;
+      loadDealsPipeline();
+    }
+    function onDealsPipelineChange(value) {
+      selectedDealsPipelineId = value;
       loadDealsPipeline();
     }
 
     async function loadDealsPipeline() {
       const requestOwnerId = selectedDealsOwnerId;
+      const requestPipelineId = selectedDealsPipelineId;
       try {
-        const url = '/api/deals-pipeline?period=' + selectedPeriod + (requestOwnerId ? '&ownerId=' + encodeURIComponent(requestOwnerId) : '');
+        const url = '/api/deals-pipeline?period=' + selectedPeriod
+          + (requestOwnerId ? '&ownerId=' + encodeURIComponent(requestOwnerId) : '')
+          + (requestPipelineId ? '&pipelineId=' + encodeURIComponent(requestPipelineId) : '');
         const res = await fetch(url);
         const data = await res.json();
 
-        if (requestOwnerId !== selectedDealsOwnerId) return; // stale — a newer selection has since started
+        if (requestOwnerId !== selectedDealsOwnerId || requestPipelineId !== selectedDealsPipelineId) return; // stale — a newer selection has since started
 
         const grid = document.getElementById('deals-vital-signs-grid');
         if (data.status !== 'ok') {
@@ -1267,6 +1296,18 @@
           grid.children[2].innerHTML = '<p class="label">New clients won, this month</p><p class="value">—</p>';
           grid.children[3].innerHTML = '<p class="label">Clients lost, this month</p><p class="value">—</p>';
           return;
+        }
+
+        // Populate the pipeline dropdown once, from real data.
+        const pipelineSelect = document.getElementById('deals-pipeline-select');
+        if (pipelineSelect.options.length === 1 && data.pipelines && data.pipelines.length > 1) {
+          for (const pipeline of data.pipelines) {
+            if (pipeline.id === data.selectedPipelineId) continue; // already the default option
+            const opt = document.createElement('option');
+            opt.value = pipeline.id;
+            opt.textContent = pipeline.label;
+            pipelineSelect.appendChild(opt);
+          }
         }
 
         // Populate the owner dropdown once, from real data — not on
