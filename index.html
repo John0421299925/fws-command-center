@@ -1,5 +1,25 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.27 — 24 Sept 2026
+     v1.27: NEW — Deal Pipeline (admin) and Pipeline leaderboard
+       (every role), backed by two new endpoints: api/deals-pipeline.js
+       and api/deals-leaderboard.js, plus a new shared module
+       lib/hubspotDealsData.js. Admin view gets a Company/person
+       dropdown (mirroring the existing period selector), open/
+       weighted pipeline, "New clients won" (real Closed Won deals,
+       green) and "Clients lost" (the real "No Longer a Client"
+       company signal, NOT Deals — churn is an account-loss event,
+       confirmed with John, red, $ value is an explicit ESTIMATE from
+       real trailing invoice revenue), and a deals-by-stage bar
+       breakdown. The leaderboard is visible to EVERY logged-in role
+       (same reasoning as Market Opportunity) — a genuine ranked
+       total per person, but deal-level DETAIL stays private to your
+       own row, John's explicit boundary: totals create healthy
+       competition, named accounts/negotiation status shouldn't be
+       visible company-wide. First pass, built from a mocked-up
+       design John reviewed beforehand — expect this section
+       specifically to need visual/layout tweaks once seen against
+       real data live, per John's own expectation going in.
      v1.26 — 22 Sept 2026
      v1.26: ADDED a total row to the bottom of the "Receivables aging"
        and "Payables by supplier (aging)" drill-down tables, per
@@ -720,6 +740,33 @@
     <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
   </div>
 
+  <!-- v1.27: Deal Pipeline — admin only. Real HubSpot Deals data
+       (api/deals-pipeline.js), with a Company/person dropdown mirroring
+       the existing period selector's UX. "New clients won" comes from
+       real Closed Won deals; "Clients lost" comes from the
+       "No Longer a Client" company signal, NOT from Deals — churn is
+       an account-loss event, not a deal outcome (confirmed with John).
+       First pass — expect this section to need visual tweaks once
+       it's actually live against real data. -->
+  <div id="admin-deals-section">
+    <div class="vital-signs-header">
+      <div class="section-heading">Deal Pipeline</div>
+      <select id="deals-owner-select" onchange="onDealsOwnerChange(this.value)">
+        <option value="">Company (all)</option>
+      </select>
+    </div>
+    <div class="vital-signs-grid" id="deals-vital-signs-grid">
+      <div class="vital-card"><p class="label">Open pipeline</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Weighted pipeline</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">New clients won, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Clients lost, this month</p><p class="value">…</p></div>
+    </div>
+    <details class="drilldown">
+      <summary>Deals by stage</summary>
+      <div id="deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
+    </details>
+  </div>
+
   <!-- v1.20: rep-view — a real scoped mini dashboard (own revenue,
        own margin, quotes) instead of just a single Quotes card.
        Backed by the new api/my-sales.js, which reuses the exact same
@@ -743,6 +790,22 @@
     <details class="drilldown">
       <summary>My clients</summary>
       <table id="my-clients-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+  </div>
+
+  <!-- v1.27: Pipeline leaderboard — visible to every logged-in rep,
+       admin included, same "Market Opportunity is for everyone"
+       reasoning. Totals only for other reps (real competitive
+       motivator, John's explicit request); full deal detail stays
+       private to your own row. Backed by api/deals-leaderboard.js. -->
+  <div id="deals-leaderboard-section">
+    <div class="section-heading">Pipeline leaderboard</div>
+    <div id="deals-leaderboard-list" style="max-width:1000px; margin:0 auto; display:flex; flex-direction:column; gap:8px;">
+      <p style="color:var(--muted); font-size:0.85rem;">Loading…</p>
+    </div>
+    <details class="drilldown" style="max-width:1000px; margin:12px auto 0;">
+      <summary>Your deals</summary>
+      <table id="my-deals-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
     </details>
   </div>
 
@@ -1080,6 +1143,10 @@
       document.getElementById('rep-quotes-section').style.display = isAdmin ? 'none' : '';
       document.getElementById('rate-card-section').style.display = canEditRateCard ? '' : 'none';
       document.getElementById('agent-health-section').style.display = isAdmin ? '' : 'none';
+      // v1.27: Deal Pipeline (admin-only, company-wide) vs the
+      // leaderboard (every logged-in role, same visibility rule
+      // already used for Market Opportunity below).
+      document.getElementById('admin-deals-section').style.display = isAdmin ? '' : 'none';
 
       // v1.18: Xero and Vercel launcher tiles are only relevant to
       // admins — a rep has no reason to jump into either, so they're
@@ -1105,15 +1172,130 @@
         setInterval(loadVitalSigns, 300000);
         loadExceptions();
         setInterval(loadExceptions, 60000);
+        loadDealsPipeline();
+        setInterval(loadDealsPipeline, 300000);
       } else {
         loadMySales();
         setInterval(loadMySales, 300000);
       }
 
+      // v1.27: leaderboard loads for EVERYONE, same reasoning as
+      // Market Opportunity below — it's the motivational, company-
+      // wide figure, not gated per-client data.
+      loadDealsLeaderboard();
+      setInterval(loadDealsLeaderboard, 300000);
+
       // v1.20: Market Opportunity loads for EVERYONE, regardless of
       // role — it's a recruiting/motivation figure, not gated data.
       loadMarketOpportunity();
       setInterval(loadMarketOpportunity, 3600000);
+    }
+
+    // v1.27: Deal Pipeline (admin) — real HubSpot Deals data via
+    // api/deals-pipeline.js. Owner dropdown is populated from the
+    // endpoint's own response (only people who actually have open
+    // deals right now), not a hardcoded list.
+    let selectedDealsOwnerId = '';
+    function onDealsOwnerChange(value) {
+      selectedDealsOwnerId = value;
+      loadDealsPipeline();
+    }
+
+    async function loadDealsPipeline() {
+      const requestOwnerId = selectedDealsOwnerId;
+      try {
+        const url = '/api/deals-pipeline?period=' + selectedPeriod + (requestOwnerId ? '&ownerId=' + encodeURIComponent(requestOwnerId) : '');
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (requestOwnerId !== selectedDealsOwnerId) return; // stale — a newer selection has since started
+
+        const grid = document.getElementById('deals-vital-signs-grid');
+        if (data.status !== 'ok') {
+          grid.children[0].innerHTML = '<p class="label">Open pipeline</p><p class="value">—</p><p class="sub">Could not load</p>';
+          grid.children[1].innerHTML = '<p class="label">Weighted pipeline</p><p class="value">—</p>';
+          grid.children[2].innerHTML = '<p class="label">New clients won, this month</p><p class="value">—</p>';
+          grid.children[3].innerHTML = '<p class="label">Clients lost, this month</p><p class="value">—</p>';
+          return;
+        }
+
+        // Populate the owner dropdown once, from real data — not on
+        // every refresh, so the person's current selection survives.
+        const select = document.getElementById('deals-owner-select');
+        if (select.options.length === 1 && data.owners && data.owners.length > 0) {
+          for (const owner of data.owners) {
+            const opt = document.createElement('option');
+            opt.value = owner.id;
+            opt.textContent = owner.name;
+            select.appendChild(opt);
+          }
+        }
+
+        grid.children[0].innerHTML = `<p class="label">Open pipeline</p><p class="value">${money(data.openPipelineTotal)}</p>`;
+        grid.children[1].innerHTML = `<p class="label">Weighted pipeline</p><p class="value">${money(data.weightedPipelineTotal)}</p>`;
+        grid.children[2].className = 'vital-card';
+        grid.children[2].style.background = 'var(--bg-success, rgba(34,197,94,0.12))';
+        grid.children[2].innerHTML = `<p class="label" style="color:var(--ok)">New clients won, ${data.periodLabel}</p><p class="value" style="color:var(--ok)">${data.newClientsWon.count}</p><p class="sub" style="color:var(--ok)">${money(data.newClientsWon.amount)}</p>`;
+        grid.children[3].innerHTML = `<p class="label" style="color:var(--error)">Clients lost, ${data.periodLabel}</p><p class="value" style="color:var(--error)">${data.clientsLost.count}</p><p class="sub" style="color:var(--error)">${money(data.clientsLost.amount)} est.</p>`;
+
+        const stageBody = document.getElementById('deals-by-stage-body');
+        if (data.dealsByStage.length > 0) {
+          const maxAmount = Math.max(...data.dealsByStage.map((s) => s.amount));
+          stageBody.innerHTML = data.dealsByStage.map((s) => `
+            <div style="margin-bottom:10px;">
+              <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+                <span>${s.stage}</span>
+                <span style="color:var(--muted)">${s.count} · ${money(s.amount)}</span>
+              </div>
+              <div style="height:6px; background:var(--bg); border-radius:3px; overflow:hidden;">
+                <div style="height:100%; width:${maxAmount > 0 ? Math.round((s.amount / maxAmount) * 100) : 0}%; background:var(--company-blue);"></div>
+              </div>
+            </div>`).join('');
+        } else {
+          stageBody.innerHTML = '<p style="color:var(--muted); margin:0;">No open deals in this stage breakdown.</p>';
+        }
+      } catch (err) {
+        console.error('loadDealsPipeline failed:', err);
+      }
+    }
+
+    // v1.27: Pipeline leaderboard (every role) — totals only for
+    // other reps, full deal list only for your own row. See
+    // api/deals-leaderboard.js for the session.ownerId dependency
+    // this relies on to identify "your" deals.
+    async function loadDealsLeaderboard() {
+      const list = document.getElementById('deals-leaderboard-list');
+      const table = document.getElementById('my-deals-table');
+      try {
+        const res = await fetch('/api/deals-leaderboard?period=' + selectedPeriod);
+        const data = await res.json();
+
+        if (data.status !== 'ok' || data.leaderboard.length === 0) {
+          list.innerHTML = '<p style="color:var(--muted); font-size:0.85rem;">No open deals to rank right now.</p>';
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">—</td></tr></tbody>';
+          return;
+        }
+
+        list.innerHTML = data.leaderboard.map((entry, i) => `
+          <div style="display:flex; align-items:center; gap:10px; background:${entry.isYou ? 'rgba(59,130,246,0.12)' : 'var(--card-bg)'}; border:${entry.isYou ? '1px solid var(--company-blue)' : '1px solid var(--border)'}; border-radius:8px; padding:10px 12px;">
+            <div style="width:22px; height:22px; border-radius:50%; background:${entry.isYou ? 'var(--company-blue)' : 'var(--bg)'}; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:500; color:${entry.isYou ? '#fff' : 'var(--text)'};">${i + 1}</div>
+            <div style="flex:1;">
+              <p style="font-size:0.9rem; font-weight:500; margin:0;">${entry.name}${entry.isYou ? ' (you)' : ''}</p>
+              <p style="font-size:0.78rem; color:var(--muted); margin:0;">${entry.dealCount} open deal${entry.dealCount === 1 ? '' : 's'}</p>
+            </div>
+            <p style="font-size:0.95rem; font-weight:500; margin:0;">${money(entry.openPipelineTotal)}</p>
+          </div>`).join('');
+
+        if (data.myDeals.length > 0) {
+          table.innerHTML = `
+            <thead><tr><th>Deal</th><th>Amount</th></tr></thead>
+            <tbody>${data.myDeals.map((d) => `<tr><td>${d.name}</td><td class="num">${money(d.amount)}</td></tr>`).join('')}</tbody>`;
+        } else {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No open deals owned by you right now.</td></tr></tbody>';
+        }
+      } catch (err) {
+        console.error('loadDealsLeaderboard failed:', err);
+      }
     }
 
     // v1.20: real, live-counted opportunity figures — see
