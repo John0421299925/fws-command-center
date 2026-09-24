@@ -2,7 +2,23 @@
 // FWS Command Center — Deal Pipeline (admin)
 // Deploy as: api/deals-pipeline.js
 // ================================================================
-// Version: v1.1
+// Version: v1.3
+//
+// v1.3: NEW - optional ?pipelineId= query param, per John's explicit
+// request (24 Sept 2026) for a real pipeline-selector dropdown, in
+// case another Deals pipeline gets created later. Omitted falls back
+// to the Client Acquisition default, so nothing changes for existing
+// callers. Response now also includes the full pipelines list and
+// which one is currently selected, for the dropdown to populate
+// itself from real data.
+//
+// v1.2: FIX - real bug found by John (24 Sept 2026): deals were being
+// pulled from the WHOLE portal, not just the Client Acquisition
+// pipeline this dashboard represents — fetchAllDeals() had no
+// pipeline filter at all. See hubspotDealsData.js v1.3's own
+// changelog for the actual fix; this file just needed to sequence
+// getDealPipelineStages() BEFORE fetchAllDeals() now, since the
+// latter needs the former's pipelineId to filter correctly.
 //
 // v1.1: FIX - real incident (24 Sept 2026): estimateMonthlyRevenueForCompanies()
 // used to scan every passed invoice company-wide over a 90-day window
@@ -42,7 +58,7 @@
 
 import { verifySession } from '../lib/auth.js';
 import { resolvePeriod, getLineItemsForInvoice } from '../lib/hubspotInvoiceData.js';
-import { getDealPipelineStages, getOwnerNamesById, fetchAllDeals, fetchChurnedCompanies, getInvoiceIdsForCompany, batchReadInvoiceSummaries } from '../lib/hubspotDealsData.js';
+import { getDealPipelineStages, getAllDealPipelines, getOwnerNamesById, fetchAllDeals, fetchChurnedCompanies, getInvoiceIdsForCompany, batchReadInvoiceSummaries } from '../lib/hubspotDealsData.js';
 
 const CLOSED_STAGE_PATTERN = /closed/i;
 
@@ -112,10 +128,21 @@ export default async function handler(req, res) {
   try {
     const { fromMs, toMs, periodLabel } = resolvePeriod(req.query);
     const ownerIdFilter = req.query.ownerId || null;
+    // v1.3: NEW — optional pipeline selector. Omitted (or an unknown
+    // id) falls back to the Client Acquisition default inside
+    // getDealPipelineStages(), so this is fully backward compatible.
+    const pipelineIdFilter = req.query.pipelineId || undefined;
 
-    const [allDeals, stages, ownerNamesById] = await Promise.all([
-      fetchAllDeals(),
-      getDealPipelineStages(),
+    // v1.2: FIX — stages must resolve FIRST now, since fetchAllDeals()
+    // needs its pipelineId to filter correctly (see
+    // hubspotDealsData.js v1.3). Deals and owners can still run
+    // together once that's known.
+    const [stages, allPipelines] = await Promise.all([
+      getDealPipelineStages(pipelineIdFilter),
+      getAllDealPipelines(),
+    ]);
+    const [allDeals, ownerNamesById] = await Promise.all([
+      fetchAllDeals(stages.pipelineId),
       getOwnerNamesById(),
     ]);
 
@@ -176,6 +203,8 @@ export default async function handler(req, res) {
       periodLabel,
       ownerIdFilter,
       owners,
+      pipelines: allPipelines,
+      selectedPipelineId: stages.pipelineId,
       openPipelineTotal: Math.round(openPipelineTotal * 100) / 100,
       weightedPipelineTotal: Math.round(weightedPipelineTotal * 100) / 100,
       dealsByStage,
