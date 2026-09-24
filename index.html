@@ -1,5 +1,21 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.28 — 24 Sept 2026
+     v1.28: FIX — two real issues found right after v1.27 went live:
+       (1) the Deal Pipeline section was sitting AFTER all the
+       existing drill-downs (Margin by client, Revenue by client,
+       etc.) instead of directly beneath the glance-level cards, per
+       John's explicit placement request — moved inside
+       admin-vital-signs-section, right after the main vital-signs
+       cards and before "Margin by client". (2) "Loading…" getting
+       stuck and the owner dropdown never populating — same root
+       cause, not two bugs: lib/hubspotInvoiceData.js (used by the new
+       churn revenue estimate in deals-pipeline.js) had ZERO
+       rate-limit retry handling anywhere, and a 429 in that heavy new
+       call pattern took down the whole deals-pipeline.js response.
+       Fixed in hubspotInvoiceData.js itself (v1.5) — see that file's
+       own changelog — not here; nothing in this file needed to
+       change for that half of the fix.
      v1.27 — 24 Sept 2026
      v1.27: NEW — Deal Pipeline (admin) and Pipeline leaderboard
        (every role), backed by two new endpoints: api/deals-pipeline.js
@@ -712,6 +728,35 @@
       <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
     </div>
 
+    <!-- v1.27: Deal Pipeline — admin only, positioned right beneath
+         the glance-level cards above and above the drill-downs below,
+         per John's explicit placement request. Real HubSpot Deals
+         data (api/deals-pipeline.js), with a Company/person dropdown
+         mirroring the existing period selector's UX. "New clients
+         won" comes from real Closed Won deals; "Clients lost" comes
+         from the "No Longer a Client" company signal, NOT from Deals
+         — churn is an account-loss event, not a deal outcome
+         (confirmed with John). First pass — expect this section to
+         need visual tweaks once seen against real data live. -->
+    <div id="admin-deals-section">
+      <div class="vital-signs-header" style="margin-top:24px;">
+        <div class="section-heading">Deal Pipeline</div>
+        <select id="deals-owner-select" onchange="onDealsOwnerChange(this.value)">
+          <option value="">Company (all)</option>
+        </select>
+      </div>
+      <div class="vital-signs-grid" id="deals-vital-signs-grid">
+        <div class="vital-card"><p class="label">Open pipeline</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">Weighted pipeline</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">New clients won, this month</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">Clients lost, this month</p><p class="value">…</p></div>
+      </div>
+      <details class="drilldown">
+        <summary>Deals by stage</summary>
+        <div id="deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
+      </details>
+    </div>
+
     <details class="drilldown">
       <summary>Margin by client</summary>
       <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
@@ -738,33 +783,6 @@
     </details>
 
     <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
-  </div>
-
-  <!-- v1.27: Deal Pipeline — admin only. Real HubSpot Deals data
-       (api/deals-pipeline.js), with a Company/person dropdown mirroring
-       the existing period selector's UX. "New clients won" comes from
-       real Closed Won deals; "Clients lost" comes from the
-       "No Longer a Client" company signal, NOT from Deals — churn is
-       an account-loss event, not a deal outcome (confirmed with John).
-       First pass — expect this section to need visual tweaks once
-       it's actually live against real data. -->
-  <div id="admin-deals-section">
-    <div class="vital-signs-header">
-      <div class="section-heading">Deal Pipeline</div>
-      <select id="deals-owner-select" onchange="onDealsOwnerChange(this.value)">
-        <option value="">Company (all)</option>
-      </select>
-    </div>
-    <div class="vital-signs-grid" id="deals-vital-signs-grid">
-      <div class="vital-card"><p class="label">Open pipeline</p><p class="value">…</p></div>
-      <div class="vital-card"><p class="label">Weighted pipeline</p><p class="value">…</p></div>
-      <div class="vital-card"><p class="label">New clients won, this month</p><p class="value">…</p></div>
-      <div class="vital-card"><p class="label">Clients lost, this month</p><p class="value">…</p></div>
-    </div>
-    <details class="drilldown">
-      <summary>Deals by stage</summary>
-      <div id="deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
-    </details>
   </div>
 
   <!-- v1.20: rep-view — a real scoped mini dashboard (own revenue,
