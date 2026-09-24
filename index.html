@@ -1,5 +1,20 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.29 — 24 Sept 2026
+     v1.29: FIX — real incident, the same day Deal Pipeline went live:
+       up to ten different HubSpot-calling requests (status, vital
+       signs, exceptions, deals-pipeline, deals-leaderboard, market
+       opportunity, and more) were all firing in the same ~60ms
+       window on page load, confirmed directly in both HubSpot's own
+       API log ("You have reached your secondly limit") and Vercel's
+       logs, where several of them still failed even AFTER a retry —
+       several concurrent retriers colliding again at the same
+       1-second mark. Retry logic alone can't fix a "too much at
+       once" problem. New startStaggered() helper spreads each
+       section's initial load out over roughly 0-5 seconds instead of
+       firing them all together; every periodic refresh naturally
+       inherits the same stagger, since setInterval is registered
+       from inside the delayed call itself.
      v1.28 — 24 Sept 2026
      v1.28: FIX — two real issues found right after v1.27 went live:
        (1) the Deal Pipeline section was sitting AFTER all the
@@ -1178,35 +1193,52 @@
           isAdmin ? 'Agent Health — live status of all automation systems' : `Welcome, ${session.name}`;
       }
 
+      // v1.28: NEW — a small stagger helper, added directly after a
+      // real incident (24 Sept 2026): ten different HubSpot-calling
+      // requests were firing in the same ~60ms window on page load
+      // (status, vital signs, exceptions, deals-pipeline,
+      // deals-leaderboard, market opportunity, and more) — enough to
+      // exhaust HubSpot's per-second rate limit even with retry logic
+      // already in every one of them, confirmed directly in HubSpot's
+      // own API log ("You have reached your secondly limit") and in
+      // Vercel's logs showing several of these still failing even
+      // after a retry attempt, because several concurrent retriers
+      // collide again at the same 1-second mark. Retrying harder
+      // can't fix a "too much at once" problem — spreading the
+      // INITIAL calls out over a couple of seconds, so they don't
+      // all land in HubSpot's rate-limit window together, is the
+      // real fix. Each subsequent periodic refresh naturally inherits
+      // the same stagger, since setInterval is registered from within
+      // the delayed call itself.
+      function startStaggered(fn, delayMs, intervalMs) {
+        setTimeout(() => {
+          fn();
+          setInterval(fn, intervalMs);
+        }, delayMs);
+      }
+
       // v1.19: Agent Health is admin-only and hidden for reps — no
       // reason to poll status.js at all when it's not being shown.
       if (isAdmin) {
-        loadStatus();
-        setInterval(loadStatus, 60000);
+        startStaggered(loadStatus, 0, 60000);
       }
 
       if (isAdmin) {
-        loadVitalSigns();
-        setInterval(loadVitalSigns, 300000);
-        loadExceptions();
-        setInterval(loadExceptions, 60000);
-        loadDealsPipeline();
-        setInterval(loadDealsPipeline, 300000);
+        startStaggered(loadVitalSigns, 0, 300000);
+        startStaggered(loadExceptions, 1200, 60000);
+        startStaggered(loadDealsPipeline, 2400, 300000);
       } else {
-        loadMySales();
-        setInterval(loadMySales, 300000);
+        startStaggered(loadMySales, 0, 300000);
       }
 
       // v1.27: leaderboard loads for EVERYONE, same reasoning as
       // Market Opportunity below — it's the motivational, company-
       // wide figure, not gated per-client data.
-      loadDealsLeaderboard();
-      setInterval(loadDealsLeaderboard, 300000);
+      startStaggered(loadDealsLeaderboard, isAdmin ? 3600 : 1200, 300000);
 
       // v1.20: Market Opportunity loads for EVERYONE, regardless of
       // role — it's a recruiting/motivation figure, not gated data.
-      loadMarketOpportunity();
-      setInterval(loadMarketOpportunity, 3600000);
+      startStaggered(loadMarketOpportunity, isAdmin ? 4800 : 2400, 3600000);
     }
 
     // v1.27: Deal Pipeline (admin) — real HubSpot Deals data via
