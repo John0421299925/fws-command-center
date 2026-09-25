@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.31 — 25 Sept 2026
+     v1.31: NEW — "My deals by stage" on the rep-facing Pipeline
+       leaderboard, agreed with John 24 Sept 2026. Same bar-chart
+       shape as the admin Deal Pipeline's own breakdown, scoped to
+       just the logged-in rep's own open deals (api/deals-leaderboard.js
+       v1.2's new myDealsByStage). "Your deals" table also gains a
+       Stage column, using the same per-deal stage label the new
+       breakdown is built from.
      v1.30 — 24 Sept 2026
      v1.30: NEW — a real pipeline-selector dropdown on Deal Pipeline,
        per John's explicit request, in case another Deals pipeline
@@ -854,6 +862,13 @@
     <div id="deals-leaderboard-list" style="max-width:1000px; margin:0 auto; display:flex; flex-direction:column; gap:8px;">
       <p style="color:var(--muted); font-size:0.85rem;">Loading…</p>
     </div>
+    <!-- v1.31: My deals by stage — per John's request, same bar-chart
+         shape as the admin Deal Pipeline's own breakdown, scoped to
+         just this rep's own deals. -->
+    <details class="drilldown" style="max-width:1000px; margin:12px auto 0;">
+      <summary>My deals by stage</summary>
+      <div id="my-deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
+    </details>
     <details class="drilldown" style="max-width:1000px; margin:12px auto 0;">
       <summary>Your deals</summary>
       <table id="my-deals-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
@@ -1357,6 +1372,7 @@
     async function loadDealsLeaderboard() {
       const list = document.getElementById('deals-leaderboard-list');
       const table = document.getElementById('my-deals-table');
+      const stageBody = document.getElementById('my-deals-by-stage-body');
       try {
         const res = await fetch('/api/deals-leaderboard?period=' + selectedPeriod);
         const data = await res.json();
@@ -1364,6 +1380,7 @@
         if (data.status !== 'ok' || data.leaderboard.length === 0) {
           list.innerHTML = '<p style="color:var(--muted); font-size:0.85rem;">No open deals to rank right now.</p>';
           table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">—</td></tr></tbody>';
+          stageBody.innerHTML = '<p style="color:var(--muted); margin:0;">—</p>';
           return;
         }
 
@@ -1379,10 +1396,28 @@
 
         if (data.myDeals.length > 0) {
           table.innerHTML = `
-            <thead><tr><th>Deal</th><th>Amount</th></tr></thead>
-            <tbody>${data.myDeals.map((d) => `<tr><td>${d.name}</td><td class="num">${money(d.amount)}</td></tr>`).join('')}</tbody>`;
+            <thead><tr><th>Deal</th><th>Stage</th><th>Amount</th></tr></thead>
+            <tbody>${data.myDeals.map((d) => `<tr><td>${d.name}</td><td>${d.stage}</td><td class="num">${money(d.amount)}</td></tr>`).join('')}</tbody>`;
         } else {
           table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No open deals owned by you right now.</td></tr></tbody>';
+        }
+
+        // v1.31: My deals by stage — same bar-chart pattern as the
+        // admin Deal Pipeline's own breakdown.
+        if (data.myDealsByStage && data.myDealsByStage.length > 0) {
+          const maxAmount = Math.max(...data.myDealsByStage.map((s) => s.amount));
+          stageBody.innerHTML = data.myDealsByStage.map((s) => `
+            <div style="margin-bottom:10px;">
+              <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+                <span>${s.stage}</span>
+                <span style="color:var(--muted)">${s.count} · ${money(s.amount)}</span>
+              </div>
+              <div style="height:6px; background:var(--bg); border-radius:3px; overflow:hidden;">
+                <div style="height:100%; width:${maxAmount > 0 ? Math.round((s.amount / maxAmount) * 100) : 0}%; background:var(--company-blue);"></div>
+              </div>
+            </div>`).join('');
+        } else {
+          stageBody.innerHTML = '<p style="color:var(--muted); margin:0;">No open deals owned by you right now.</p>';
         }
       } catch (err) {
         console.error('loadDealsLeaderboard failed:', err);
