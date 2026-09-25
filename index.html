@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.33 — 25 Sept 2026
+     v1.33: NEW — the leaderboard's #1 spot went from a subtle badge
+       to a genuine black-and-white checkered-flag strip (John:
+       "does not stand out enough"), fluorescent yellow text/badge on
+       top for contrast against the alternating squares. New
+       .leaderboard-leader / .leaderboard-leader-text CSS classes.
      v1.32 — 25 Sept 2026
      v1.32: NEW — the #1 spot on the Pipeline leaderboard now gets a
        solid black badge with a checkmark instead of a plain "1", per
@@ -451,6 +457,27 @@
     .vital-card.invoice-vital .label { color: var(--invoice-yellow); }
     .vital-card.invoice-vital .value { color: var(--invoice-yellow); }
     .vital-card.invoice-vital .sub { color: var(--invoice-yellow); }
+    /* v1.33: Pipeline leaderboard leader — a real black-and-white
+       checkered-flag strip (John's explicit request, "stand out"),
+       with fluorescent yellow text/badge on top for contrast against
+       the alternating black/white squares. */
+    .leaderboard-leader {
+      background-color: #fff;
+      background-image:
+        linear-gradient(45deg, #000 25%, transparent 25%),
+        linear-gradient(-45deg, #000 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #000 75%),
+        linear-gradient(-45deg, transparent 75%, #000 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+      border: 2px solid var(--invoice-yellow) !important;
+      box-shadow: 0 0 14px rgba(234,255,0,0.45);
+    }
+    .leaderboard-leader .leaderboard-leader-text {
+      color: var(--invoice-yellow);
+      font-weight: 700;
+      text-shadow: 0 0 3px #000, 0 0 6px #000;
+    }
     /* v1.23: My Blended Margin on the rep view — fluorescent red,
        John's explicit request, same glow treatment as the yellow
        Invoices card and green Quotations card so all three read as
@@ -1394,16 +1421,17 @@
         list.innerHTML = data.leaderboard.map((entry, i) => {
           const isLeader = i === 0;
           const badgeBg = isLeader ? '#000' : (entry.isYou ? 'var(--company-blue)' : 'var(--bg)');
-          const badgeColor = isLeader || entry.isYou ? '#fff' : 'var(--text)';
+          const badgeColor = isLeader ? 'var(--invoice-yellow)' : (entry.isYou ? '#fff' : 'var(--text)');
           const badgeContent = isLeader ? '&#10003;' : (i + 1);
+          const textClass = isLeader ? 'leaderboard-leader-text' : '';
           return `
-          <div style="display:flex; align-items:center; gap:10px; background:${entry.isYou ? 'rgba(59,130,246,0.12)' : 'var(--card-bg)'}; border:${entry.isYou ? '1px solid var(--company-blue)' : '1px solid var(--border)'}; border-radius:8px; padding:10px 12px;">
-            <div style="width:22px; height:22px; border-radius:50%; background:${badgeBg}; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:500; color:${badgeColor};">${badgeContent}</div>
+          <div class="${isLeader ? 'leaderboard-leader' : ''}" style="display:flex; align-items:center; gap:10px; ${isLeader ? '' : `background:${entry.isYou ? 'rgba(59,130,246,0.12)' : 'var(--card-bg)'}; border:1px solid ${entry.isYou ? 'var(--company-blue)' : 'var(--border)'};`} border-radius:8px; padding:10px 12px;">
+            <div style="width:22px; height:22px; border-radius:50%; background:${badgeBg}; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:${badgeColor};">${badgeContent}</div>
             <div style="flex:1;">
-              <p style="font-size:0.9rem; font-weight:500; margin:0;">${entry.name}${entry.isYou ? ' (you)' : ''}</p>
-              <p style="font-size:0.78rem; color:var(--muted); margin:0;">${entry.dealCount} open deal${entry.dealCount === 1 ? '' : 's'}</p>
+              <p class="${textClass}" style="font-size:0.9rem; font-weight:500; margin:0;">${entry.name}${entry.isYou ? ' (you)' : ''}</p>
+              <p class="${textClass}" style="font-size:0.78rem; margin:0; ${isLeader ? '' : 'color:var(--muted);'}">${entry.dealCount} open deal${entry.dealCount === 1 ? '' : 's'}</p>
             </div>
-            <p style="font-size:0.95rem; font-weight:500; margin:0;">${money(entry.openPipelineTotal)}</p>
+            <p class="${textClass}" style="font-size:0.95rem; font-weight:500; margin:0;">${money(entry.openPipelineTotal)}</p>
           </div>`;
         }).join('');
 
