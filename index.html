@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.32 — 25 Sept 2026
+     v1.32: NEW — the #1 spot on the Pipeline leaderboard now gets a
+       solid black badge with a checkmark instead of a plain "1", per
+       John's request, so the leader stands out at a glance. Applies
+       regardless of whether the leader is the logged-in rep
+       themselves — the existing blue "(you)" highlighting is
+       unchanged and layers on top of it independently.
      v1.31 — 25 Sept 2026
      v1.31: NEW — "My deals by stage" on the rep-facing Pipeline
        leaderboard, agreed with John 24 Sept 2026. Same bar-chart
@@ -1384,15 +1391,21 @@
           return;
         }
 
-        list.innerHTML = data.leaderboard.map((entry, i) => `
+        list.innerHTML = data.leaderboard.map((entry, i) => {
+          const isLeader = i === 0;
+          const badgeBg = isLeader ? '#000' : (entry.isYou ? 'var(--company-blue)' : 'var(--bg)');
+          const badgeColor = isLeader || entry.isYou ? '#fff' : 'var(--text)';
+          const badgeContent = isLeader ? '&#10003;' : (i + 1);
+          return `
           <div style="display:flex; align-items:center; gap:10px; background:${entry.isYou ? 'rgba(59,130,246,0.12)' : 'var(--card-bg)'}; border:${entry.isYou ? '1px solid var(--company-blue)' : '1px solid var(--border)'}; border-radius:8px; padding:10px 12px;">
-            <div style="width:22px; height:22px; border-radius:50%; background:${entry.isYou ? 'var(--company-blue)' : 'var(--bg)'}; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:500; color:${entry.isYou ? '#fff' : 'var(--text)'};">${i + 1}</div>
+            <div style="width:22px; height:22px; border-radius:50%; background:${badgeBg}; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:500; color:${badgeColor};">${badgeContent}</div>
             <div style="flex:1;">
               <p style="font-size:0.9rem; font-weight:500; margin:0;">${entry.name}${entry.isYou ? ' (you)' : ''}</p>
               <p style="font-size:0.78rem; color:var(--muted); margin:0;">${entry.dealCount} open deal${entry.dealCount === 1 ? '' : 's'}</p>
             </div>
             <p style="font-size:0.95rem; font-weight:500; margin:0;">${money(entry.openPipelineTotal)}</p>
-          </div>`).join('');
+          </div>`;
+        }).join('');
 
         if (data.myDeals.length > 0) {
           table.innerHTML = `
