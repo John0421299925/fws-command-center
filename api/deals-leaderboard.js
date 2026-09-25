@@ -2,7 +2,21 @@
 // FWS Command Center — Deal Pipeline Leaderboard (rep-facing)
 // Deploy as: api/deals-leaderboard.js
 // ================================================================
-// Version: v1.0
+// Version: v1.2
+//
+// v1.2: NEW - "My deals by stage" breakdown, agreed with John 24
+// Sept 2026, same bar-chart shape as the admin Deal Pipeline's own
+// "Deals by stage" but scoped to just the logged-in rep's own open
+// deals. Each entry in myDeals also now carries its own stage label,
+// for a small "stage" column on the existing deal table. Same
+// private-detail boundary as everywhere else on this endpoint: a
+// rep sees their OWN breakdown in full, never a colleague's.
+//
+// v1.1: FIX - same real bug as deals-pipeline.js: deals were being
+// pulled from the whole portal, not just the Client Acquisition
+// pipeline. See hubspotDealsData.js v1.3's changelog for the actual
+// fix; this file just needed to sequence getDealPipelineStages()
+// before fetchAllDeals() to get the pipelineId it now requires.
 //
 // PURPOSE: the rep-facing half of the Deal Pipeline feature — a
 // genuine leaderboard (everyone's OPEN pipeline total and deal
@@ -32,7 +46,7 @@
 
 import { verifySession } from '../lib/auth.js';
 import { resolvePeriod } from '../lib/hubspotInvoiceData.js';
-import { fetchAllDeals, getOwnerNamesById } from '../lib/hubspotDealsData.js';
+import { fetchAllDeals, getOwnerNamesById, getDealPipelineStages } from '../lib/hubspotDealsData.js';
 
 function isClosedDeal(deal) {
   return deal.properties.hs_is_closed_won === 'true' || deal.properties.hs_is_closed_lost === 'true';
@@ -51,8 +65,13 @@ export default async function handler(req, res) {
   try {
     const { periodLabel } = resolvePeriod(req.query);
 
+    // v1.1: FIX — same real bug as deals-pipeline.js: deals must be
+    // filtered to the Client Acquisition pipeline, not pulled from
+    // the whole portal. Stages resolve first since fetchAllDeals()
+    // needs the pipelineId.
+    const stages = await getDealPipelineStages();
     const [allDeals, ownerNamesById] = await Promise.all([
-      fetchAllDeals(),
+      fetchAllDeals(stages.pipelineId),
       getOwnerNamesById(),
     ]);
 
@@ -86,21 +105,41 @@ export default async function handler(req, res) {
       }))
       .sort((a, b) => b.openPipelineTotal - a.openPipelineTotal);
 
-    const myDeals = myOwnerId
-      ? openDeals
-          .filter((d) => d.properties.hubspot_owner_id === myOwnerId)
-          .map((d) => ({
-            name: d.properties.dealname,
-            amount: Math.round((parseFloat(d.properties.amount) || 0) * 100) / 100,
-          }))
-          .sort((a, b) => b.amount - a.amount)
+    const myOpenDeals = myOwnerId
+      ? openDeals.filter((d) => d.properties.hubspot_owner_id === myOwnerId)
       : [];
+
+    const myDeals = myOpenDeals
+      .map((d) => ({
+        name: d.properties.dealname,
+        amount: Math.round((parseFloat(d.properties.amount) || 0) * 100) / 100,
+        stage: stages.stageLabelsById[d.properties.dealstage] || `(unrecognised stage ${d.properties.dealstage})`,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
+    // v1.2: NEW — per-rep stage breakdown, per John's request (24
+    // Sept 2026), same bar-chart shape as the admin Deal Pipeline's
+    // own "Deals by stage" but scoped to just this rep's own deals —
+    // same private-detail boundary as myDeals above, just grouped
+    // differently.
+    const byStage = new Map();
+    for (const deal of myOpenDeals) {
+      const label = stages.stageLabelsById[deal.properties.dealstage] || `(unrecognised stage ${deal.properties.dealstage})`;
+      if (!byStage.has(label)) byStage.set(label, { count: 0, amount: 0 });
+      const entry = byStage.get(label);
+      entry.count++;
+      entry.amount += parseFloat(deal.properties.amount) || 0;
+    }
+    const myDealsByStage = [...byStage.entries()]
+      .map(([stage, v]) => ({ stage, count: v.count, amount: Math.round(v.amount * 100) / 100 }))
+      .sort((a, b) => b.amount - a.amount);
 
     return res.status(200).json({
       status: 'ok',
       periodLabel,
       leaderboard,
       myDeals,
+      myDealsByStage,
       myOwnerIdResolved: myOwnerId !== null,
     });
   } catch (error) {
