@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.35 — 25 Sept 2026
+     v1.35: FIX — the name pill was set to flex:1, stretching it to
+       fill nearly the whole row and swallowing most of the checkered
+       pattern John specifically liked (screenshot: the black pill
+       covered ~80% of the strip's width). Now sized to hug its own
+       text (display:inline-block) with a transparent flex spacer
+       between it and the amount pill, so the checkered pattern shows
+       through clearly in the middle again.
      v1.34 — 25 Sept 2026
      v1.34: FIX — real readability issue found immediately after
        v1.33 shipped: fluorescent yellow text sitting directly on the
@@ -1450,7 +1458,7 @@
           <div class="${isLeader ? 'leaderboard-leader' : ''}" style="display:flex; align-items:center; gap:10px; ${isLeader ? '' : `background:${entry.isYou ? 'rgba(59,130,246,0.12)' : 'var(--card-bg)'}; border:1px solid ${entry.isYou ? 'var(--company-blue)' : 'var(--border)'};`} border-radius:8px; padding:10px 12px;">
             <div style="width:22px; height:22px; border-radius:50%; background:${badgeBg}; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:${badgeColor};">${badgeContent}</div>
             ${isLeader
-              ? `<div class="leaderboard-leader-pill" style="flex:1;">${nameBlock}</div><div class="leaderboard-leader-pill">${amountBlock}</div>`
+              ? `<div class="leaderboard-leader-pill" style="display:inline-block;">${nameBlock}</div><div style="flex:1;"></div><div class="leaderboard-leader-pill">${amountBlock}</div>`
               : `<div style="flex:1;">${nameBlock}</div>${amountBlock}`}
           </div>`;
         }).join('');
