@@ -1,13 +1,17 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Login
-  Version: v1.3
+  Version: v1.4
 
   Real per-person login (username + password), replacing the old
   single shared password gate. Posts to /api/login, which sets a
   session cookie carrying the person's identity on success and
   redirects back to wherever they were trying to go.
 
+  v1.4 - Added a "Forgot password?" link, built after James got
+         genuinely locked out with no way back in except John/James
+         manually editing CC_USERS. Points to the new
+         forgot-password.html.
   v1.1 - The error message shown on failure was hardcoded to
          "Incorrect password" regardless of what actually went wrong
          (e.g. CC_PASSWORD not configured on this environment would
@@ -102,6 +106,15 @@
     text-align: center;
     display: none;
   }
+  .forgot-link {
+    display: block;
+    text-align: center;
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-decoration: none;
+  }
+  .forgot-link:hover { color: var(--text); }
 </style>
 </head>
 <body>
@@ -114,6 +127,7 @@
       <button type="submit" id="submit-btn">Log in</button>
       <div class="error-msg" id="error-msg"></div>
     </form>
+    <a class="forgot-link" href="/forgot-password.html">Forgot password?</a>
   </div>
 
   <script>
