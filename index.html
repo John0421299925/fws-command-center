@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.36 — 1 Oct 2026
+     v1.36: NEW — a "quick commission estimate" on the Prospect Value
+       Calculator, per John's request: type an annual revenue figure
+       directly (e.g. $500,000) and an adjustable margin %, see the
+       resulting annual commission update live — no need to build the
+       estimate up service by service when a rep already has a
+       ballpark figure in mind. Sits above the existing line-item
+       builder, reusing the exact same CALC_REP_SHARE_OF_GP_PERCENT
+       constant so the two can never quietly disagree.
      v1.35 — 25 Sept 2026
      v1.35: FIX — the name pill was set to flex:1, stretching it to
        fill nearly the whole row and swallowing most of the checkered
@@ -979,6 +988,29 @@
   <div class="section-heading">Prospect Value Calculator</div>
   <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
     <summary>Estimate a prospective site's annual value</summary>
+    <!-- v1.36: NEW — quick commission estimate, per John's request: a
+         simple direct-entry alternative for when a rep already has a
+         ballpark annual revenue figure in mind (e.g. a big multi-site
+         portfolio deal) rather than building it up service by
+         service below. Reuses the EXACT same CALC_REP_SHARE_OF_GP_PERCENT
+         constant as the line-item builder underneath, so the two can
+         never quietly disagree on what a rep's share actually means.
+         Updates live as you type — no "Add" button, since it's a
+         single quick figure, not a running list. -->
+    <div style="padding:16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Quick estimate — annual revenue</label>
+        <input id="quick-annual-revenue" type="number" min="0" step="1000" placeholder="e.g. 500000" oninput="updateQuickCommissionEstimate()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Margin %</label>
+        <input id="quick-margin" type="number" min="0" max="100" step="0.1" value="15.5" oninput="updateQuickCommissionEstimate()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <p style="font-size:0.95rem; font-weight:600; margin:0;" id="quick-commission-result">Annual commission: $0</p>
+        <p style="font-size:0.72rem; color:var(--muted); margin:2px 0 0;">*at 40% of gross profit — same formula as the detailed estimate below</p>
+      </div>
+    </div>
     <div style="padding:16px; display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
       <div>
         <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Waste type</label>
@@ -1529,6 +1561,19 @@
     // so this calculator's "Rep earning" figure and that card's
     // figures can never disagree about what a rep's share means.
     const CALC_REP_SHARE_OF_GP_PERCENT = 40;
+
+    // v1.36: NEW — the quick direct-entry estimate's live calculation.
+    // Deliberately the exact same two-step formula as the line-item
+    // builder below (revenue × margin% = gross profit, × rep share% =
+    // commission) — just skipping the "build it up service by
+    // service" step when a rep already has a ballpark annual figure.
+    function updateQuickCommissionEstimate() {
+      const annualRevenue = parseFloat(document.getElementById('quick-annual-revenue').value) || 0;
+      const marginPercent = parseFloat(document.getElementById('quick-margin').value) || 0;
+      const grossProfit = annualRevenue * (marginPercent / 100);
+      const commission = grossProfit * (CALC_REP_SHARE_OF_GP_PERCENT / 100);
+      document.getElementById('quick-commission-result').textContent = `Annual commission: ${money(commission)}`;
+    }
 
     let calculatorLines = [];
 
