@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.37 — 1 Oct 2026
+     v1.37: NEW — the quick commission estimate now also shows a
+       Monthly commission figure alongside Annual (annual ÷ 12), per
+       John's request. Both now styled in the same fluorescent green
+       already used for "Rep earning potential" elsewhere on this
+       page, instead of plain white text.
      v1.36 — 1 Oct 2026
      v1.36: NEW — a "quick commission estimate" on the Prospect Value
        Calculator, per John's request: type an annual revenue figure
@@ -1007,8 +1013,9 @@
         <input id="quick-margin" type="number" min="0" max="100" step="0.1" value="15.5" oninput="updateQuickCommissionEstimate()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
       </div>
       <div style="flex:1; min-width:200px;">
-        <p style="font-size:0.95rem; font-weight:600; margin:0;" id="quick-commission-result">Annual commission: $0</p>
-        <p style="font-size:0.72rem; color:var(--muted); margin:2px 0 0;">*at 40% of gross profit — same formula as the detailed estimate below</p>
+        <p style="font-size:0.95rem; font-weight:600; margin:0; color:var(--quote-green);" id="quick-commission-annual">Annual commission: $0</p>
+        <p style="font-size:0.95rem; font-weight:600; margin:2px 0 0; color:var(--quote-green);" id="quick-commission-monthly">Monthly commission: $0</p>
+        <p style="font-size:0.72rem; color:var(--muted); margin:4px 0 0;">*at 40% of gross profit — same formula as the detailed estimate below</p>
       </div>
     </div>
     <div style="padding:16px; display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
@@ -1571,8 +1578,10 @@
       const annualRevenue = parseFloat(document.getElementById('quick-annual-revenue').value) || 0;
       const marginPercent = parseFloat(document.getElementById('quick-margin').value) || 0;
       const grossProfit = annualRevenue * (marginPercent / 100);
-      const commission = grossProfit * (CALC_REP_SHARE_OF_GP_PERCENT / 100);
-      document.getElementById('quick-commission-result').textContent = `Annual commission: ${money(commission)}`;
+      const annualCommission = grossProfit * (CALC_REP_SHARE_OF_GP_PERCENT / 100);
+      const monthlyCommission = annualCommission / 12;
+      document.getElementById('quick-commission-annual').textContent = `Annual commission: ${money(annualCommission)}`;
+      document.getElementById('quick-commission-monthly').textContent = `Monthly commission: ${money(monthlyCommission)}`;
     }
 
     let calculatorLines = [];
