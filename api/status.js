@@ -1,5 +1,23 @@
 // FWS Command Center — Agent Status Checker
-// v1.5
+// v1.6
+// v1.6: NEW — three changes, all for the Agent Health cards:
+//   (1) A TIME SAVER card ("Time Saver (CRM Capture)"). Time Saver
+//       already had a real health check (/api/health: is it still
+//       watching the crm.agent@ mailbox, and how long until that watch
+//       needs renewing) - it simply had no card here.
+//   (2) AMBER "warning". A health check can now answer status
+//       "warning" (HTTP 200, status "warning") and the card shows it as
+//       amber instead of forcing a choice between green and red. First
+//       user: Agent 1 v1.15 - it is still watching the mailbox (not red)
+//       but has invoice emails waiting longer than the 30-minute sweep
+//       should allow, or emails that gave up after repeated failures.
+//       Anything else that is not "ok" is still "error" (red), exactly as
+//       in v1.5.
+//   (3) VERSION FOR EVERY CARD. Agent 1's and Time Saver's health checks
+//       report health but not their version, so an agent can now carry an
+//       optional versionUrl (their plain /webhook check) which is read
+//       alongside the health check. It is best-effort: if it fails the
+//       card just shows no version - it can never change a card's status.
 // v1.5: NEW — three real health checks added, directly prompted by
 //   two genuine incidents this week that nothing on this dashboard
 //   caught: fws-xero-reader's and clv-invoice-automation's Xero
@@ -76,10 +94,22 @@ const AGENTS = [
   // v1.5: NEW — real subscription check, not just reachability. See
   // fws-hubspot-agent-a4be's own webhook.py v1.45 changelog for the
   // full incident this was built to catch.
+  // v1.6: also reports waiting / gave-up emails as an amber warning
+  // (Agent 1 v1.15), and its version is read from its plain check.
   {
     id: "agent1",
     name: "Agent 1 (Mailbox Intake)",
     url: "https://fws-hubspot-agent-a4be.vercel.app/api/agent1-health",
+    versionUrl: "https://fws-hubspot-agent-a4be.vercel.app/api/agent1-webhook",
+    manualNote: null,
+  },
+  // v1.6: NEW — Time Saver (the CRM capture agent, fws-sales-crm-agent).
+  // Real check: is it still watching crm.agent@futurewaste.com.au.
+  {
+    id: "time-saver",
+    name: "Time Saver (CRM Capture)",
+    url: "https://fws-sales-crm-agent.vercel.app/api/health",
+    versionUrl: "https://fws-sales-crm-agent.vercel.app/api/webhook",
     manualNote: null,
   },
   // v1.5: NEW — reuses clv-invoice-automation's existing
@@ -112,8 +142,26 @@ function cleanVersion(rawVersion) {
   return String(rawVersion).split(" - ")[0].trim();
 }
 
+// v1.6: best-effort version lookup from an agent's plain check. Never
+// throws and never affects a card's status - no version is simply
+// shown as no version.
+async function fetchVersion(versionUrl) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(versionUrl, { signal: controller.signal });
+    clearTimeout(timeout);
+    const data = await res.json();
+    return cleanVersion(data && data.version);
+  } catch {
+    return null;
+  }
+}
+
 async function checkAgent(agent) {
   const started = Date.now();
+  // v1.6: start the version lookup alongside the health check, not after it
+  const versionPromise = agent.versionUrl ? fetchVersion(agent.versionUrl) : Promise.resolve(null);
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -138,6 +186,7 @@ async function checkAgent(agent) {
         id: agent.id,
         name: agent.name,
         status: res.ok ? "ok" : "error",
+        version: await versionPromise,
         detail: `HTTP ${res.status}`,
         responseMs,
         manualNote: agent.manualNote,
@@ -145,6 +194,8 @@ async function checkAgent(agent) {
     }
 
     const isOk = data.status === "ok";
+    // v1.6: "warning" (amber) is a real answer from a health check, not an error
+    const status = isOk ? "ok" : data.status === "warning" ? "warning" : "error";
     // v1.5: prefer an explicit detail/error message from the body;
     // fall back to a Connected-to-X message for connection-check.js's
     // success shape (which has no top-level "detail" field), then
@@ -158,8 +209,8 @@ async function checkAgent(agent) {
     return {
       id: agent.id,
       name: agent.name,
-      status: isOk ? "ok" : "error",
-      version: cleanVersion(data.version),
+      status,
+      version: cleanVersion(data.version) || (await versionPromise),
       detail,
       responseMs,
       manualNote: agent.manualNote,
@@ -169,6 +220,7 @@ async function checkAgent(agent) {
       id: agent.id,
       name: agent.name,
       status: "unreachable",
+      version: await versionPromise,
       detail: err.name === "AbortError" ? "Timed out" : "Request failed",
       responseMs: Date.now() - started,
       manualNote: agent.manualNote,
