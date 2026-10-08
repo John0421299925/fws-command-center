@@ -1,5 +1,2523 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.39 — 8 Oct 2026
+     v1.39: NEW — a "Payables by supplier (HubSpot)" drill-down, directly
+       under "Revenue by client & waste type": for the chosen period,
+       what each supplier billed us through the HubSpot invoices, with
+       the revenue billed to clients on those same invoices and each
+       supplier's margin, plus a total row. Backed by the new
+       api/payables-by-supplier.js (admin only; the supplier comes from
+       each invoice's dedupe_key, not the broken vendor-company
+       association). It only loads when the drill-down is OPENED — it
+       makes the same heavy per-invoice HubSpot calls as the margin and
+       revenue endpoints, and the page already fires several of those
+       at once (see v1.29) — then follows the period dropdown and
+       refreshes with the page while it stays open. Its total is
+       checked against the Payables card from v1.38: the note under the
+       table says "matches the Payables card", or flags the difference,
+       so the two can never quietly disagree. Named "(HubSpot)" because
+       "Payables by supplier (aging)" further down is the Xero unpaid
+       balance, a different question. Supplier names are HTML-escaped
+       before being shown.
+     v1.38 — 8 Oct 2026
+     v1.38: NEW — a "Payables" card sits directly beside Revenue on the
+       admin Business Vital Signs, per John and James's request: the
+       supplier cost of the invoices that came through HubSpot, for
+       the same period the Revenue card is showing (this month / year
+       to date / financial year to date). No new backend: it is the
+       sum of the "cost" column api/margin-by-client.js already
+       returns (the very figure Blended Margin is built from), so
+       Revenue minus Payables always agrees with the margin card. The
+       sub-line shows how much of the revenue actually has a supplier
+       cost recorded against it, and the card turns amber when that
+       falls below 90%, so a low Payables figure caused by missing
+       cost data can't be mistaken for a genuinely low one. NOT the
+       same as the existing "Largest supplier (payables)" card, which
+       is what is still unpaid in Xero — this one is what suppliers
+       billed us through HubSpot in the period, paid or not. Because
+       the new card goes second, every card after it moves along one
+       position; the position-based references in setVitalCard() and
+       loadVitalSigns() were all updated together (Blended margin 2,
+       Overdue receivables 3, Largest client 4, Largest supplier 5,
+       Invoices awaiting approval 6, Quotes awaiting approval 7).
+       Nothing else on this page changed.
+     v1.37 — 1 Oct 2026
+     v1.37: NEW — the quick commission estimate now also shows a
+       Monthly commission figure alongside Annual (annual ÷ 12), per
+       John's request. Both now styled in the same fluorescent green
+       already used for "Rep earning potential" elsewhere on this
+       page, instead of plain white text.
+     v1.36 — 1 Oct 2026
+     v1.36: NEW — a "quick commission estimate" on the Prospect Value
+       Calculator, per John's request: type an annual revenue figure
+       directly (e.g. $500,000) and an adjustable margin %, see the
+       resulting annual commission update live — no need to build the
+       estimate up service by service when a rep already has a
+       ballpark figure in mind. Sits above the existing line-item
+       builder, reusing the exact same CALC_REP_SHARE_OF_GP_PERCENT
+       constant so the two can never quietly disagree.
+     v1.35 — 25 Sept 2026
+     v1.35: FIX — the name pill was set to flex:1, stretching it to
+       fill nearly the whole row and swallowing most of the checkered
+       pattern John specifically liked (screenshot: the black pill
+       covered ~80% of the strip's width). Now sized to hug its own
+       text (display:inline-block) with a transparent flex spacer
+       between it and the amount pill, so the checkered pattern shows
+       through clearly in the middle again.
+     v1.34 — 25 Sept 2026
+     v1.34: FIX — real readability issue found immediately after
+       v1.33 shipped: fluorescent yellow text sitting directly on the
+       checkered pattern lost contrast against the white squares
+       specifically, no bold/text-shadow fixed it reliably. Text now
+       sits on a solid black pill (.leaderboard-leader-pill) layered
+       on top of the checkered background instead — the pattern still
+       shows around the badge and pill edges, but the actual text is
+       always yellow-on-solid-black, same contrast principle as
+       hazard tape.
+     v1.33 — 25 Sept 2026
+     v1.33: NEW — the leaderboard's #1 spot went from a subtle badge
+       to a genuine black-and-white checkered-flag strip (John:
+       "does not stand out enough"), fluorescent yellow text/badge on
+       top for contrast against the alternating squares. New
+       .leaderboard-leader / .leaderboard-leader-text CSS classes.
+     v1.32 — 25 Sept 2026
+     v1.32: NEW — the #1 spot on the Pipeline leaderboard now gets a
+       solid black badge with a checkmark instead of a plain "1", per
+       John's request, so the leader stands out at a glance. Applies
+       regardless of whether the leader is the logged-in rep
+       themselves — the existing blue "(you)" highlighting is
+       unchanged and layers on top of it independently.
+     v1.31 — 25 Sept 2026
+     v1.31: NEW — "My deals by stage" on the rep-facing Pipeline
+       leaderboard, agreed with John 24 Sept 2026. Same bar-chart
+       shape as the admin Deal Pipeline's own breakdown, scoped to
+       just the logged-in rep's own open deals (api/deals-leaderboard.js
+       v1.2's new myDealsByStage). "Your deals" table also gains a
+       Stage column, using the same per-deal stage label the new
+       breakdown is built from.
+     v1.30 — 24 Sept 2026
+     v1.30: NEW — a real pipeline-selector dropdown on Deal Pipeline,
+       per John's explicit request, in case another Deals pipeline
+       gets created down the track. Sits next to the existing
+       Company/person dropdown, populated from api/deals-pipeline.js's
+       own real pipeline list — nothing hardcoded here — defaulting
+       to Client Acquisition, so today's behaviour is unchanged unless
+       someone actually picks a different pipeline.
+     v1.29 — 24 Sept 2026
+     v1.29: FIX — real incident, the same day Deal Pipeline went live:
+       up to ten different HubSpot-calling requests (status, vital
+       signs, exceptions, deals-pipeline, deals-leaderboard, market
+       opportunity, and more) were all firing in the same ~60ms
+       window on page load, confirmed directly in both HubSpot's own
+       API log ("You have reached your secondly limit") and Vercel's
+       logs, where several of them still failed even AFTER a retry —
+       several concurrent retriers colliding again at the same
+       1-second mark. Retry logic alone can't fix a "too much at
+       once" problem. New startStaggered() helper spreads each
+       section's initial load out over roughly 0-5 seconds instead of
+       firing them all together; every periodic refresh naturally
+       inherits the same stagger, since setInterval is registered
+       from inside the delayed call itself.
+     v1.28 — 24 Sept 2026
+     v1.28: FIX — two real issues found right after v1.27 went live:
+       (1) the Deal Pipeline section was sitting AFTER all the
+       existing drill-downs (Margin by client, Revenue by client,
+       etc.) instead of directly beneath the glance-level cards, per
+       John's explicit placement request — moved inside
+       admin-vital-signs-section, right after the main vital-signs
+       cards and before "Margin by client". (2) "Loading…" getting
+       stuck and the owner dropdown never populating — same root
+       cause, not two bugs: lib/hubspotInvoiceData.js (used by the new
+       churn revenue estimate in deals-pipeline.js) had ZERO
+       rate-limit retry handling anywhere, and a 429 in that heavy new
+       call pattern took down the whole deals-pipeline.js response.
+       Fixed in hubspotInvoiceData.js itself (v1.5) — see that file's
+       own changelog — not here; nothing in this file needed to
+       change for that half of the fix.
+     v1.27 — 24 Sept 2026
+     v1.27: NEW — Deal Pipeline (admin) and Pipeline leaderboard
+       (every role), backed by two new endpoints: api/deals-pipeline.js
+       and api/deals-leaderboard.js, plus a new shared module
+       lib/hubspotDealsData.js. Admin view gets a Company/person
+       dropdown (mirroring the existing period selector), open/
+       weighted pipeline, "New clients won" (real Closed Won deals,
+       green) and "Clients lost" (the real "No Longer a Client"
+       company signal, NOT Deals — churn is an account-loss event,
+       confirmed with John, red, $ value is an explicit ESTIMATE from
+       real trailing invoice revenue), and a deals-by-stage bar
+       breakdown. The leaderboard is visible to EVERY logged-in role
+       (same reasoning as Market Opportunity) — a genuine ranked
+       total per person, but deal-level DETAIL stays private to your
+       own row, John's explicit boundary: totals create healthy
+       competition, named accounts/negotiation status shouldn't be
+       visible company-wide. First pass, built from a mocked-up
+       design John reviewed beforehand — expect this section
+       specifically to need visual/layout tweaks once seen against
+       real data live, per John's own expectation going in.
+     v1.26 — 22 Sept 2026
+     v1.26: ADDED a total row to the bottom of the "Receivables aging"
+       and "Payables by supplier (aging)" drill-down tables, per
+       John's request — so the real company-wide total AR/AP figure
+       is visible right there with the detail, not something you have
+       to add up yourself or infer from a percentage. Uses the
+       totalOutstanding/totalOwing figures ar-aging.js and ap-aging.js
+       already calculate and return, rather than re-summing
+       client-side — so this total can never drift from what those
+       endpoints' own JSON says. New .total-row CSS class (bolder
+       text, heavier top border) so it reads clearly as a sum, not
+       just another row.
+       NOTE: this top-of-file changelog had fallen behind — the
+       actual deployed code already contained versions up to v1.25
+       (rep-view Sales Centre, Prospect Value Calculator, Request a
+       New Quote, etc.), documented only as inline comments scattered
+       through the JS, never logged up here. Not retroactively
+       reconstructing that full history now (would be guessing at
+       exact dates/reasoning that should come from whoever actually
+       made those changes) — just flagging the gap and keeping this
+       header accurate going forward from v1.26 onward.
+     v1.17: ADDED a period selector (This month / Year to date /
+       Financial year to date) for the Revenue and Blended Margin
+       cards only, per John's request. Backed by resolvePeriod() v1.1
+       in lib/hubspotInvoiceData.js. Everything else on this page —
+       login system, logo, Quotations card, Invoices Awaiting Approval
+       card, all colours — is untouched from v1.16.
+     v1.16: Added the FWS logo to the header. It's a white-background
+       JPEG, so it sits inside a small white rounded card rather than
+       going directly on the dark background — otherwise it would look
+       like a rendering glitch, not a logo. Expects a file at
+       /logo.jpg in the repo root (uploaded separately by John, since
+       binary files can't be pasted as text).
+     v1.15: Added a whole-site login system (login.html, api/login.js,
+       api/logout.js, api/whoami.js) at John's request — the whole
+       Command Centre displays sensitive business data (revenue,
+       margin, client names, quote pricing), not just the Rate Card
+       write-access tools, so it needs its own gate rather than relying
+       on individual tools being locked. This page now checks
+       api/whoami on load and redirects to /login.html if there's no
+       valid session — but the REAL protection is that every
+       api/*.js file that returns real data checks the same session
+       cookie itself before responding, so the data is protected even
+       if someone loads this page's HTML directly without running its
+       JS. Added a small "Log out" link in the header.
+     v1.14: "Invoices awaiting approval" switched from the shared
+       amber "warning" styling to its own bright fluorescent yellow
+       (John's request), matching the glow treatment already given to
+       the green Quotations card — both now read as distinct, deliberately
+       eye-catching categories rather than blending into the generic
+       amber "warning" look. Plain amber "warning" is still used
+       elsewhere (e.g. Overdue receivables crossing its threshold),
+       untouched.
+     v1.13: Moved Quotations out of its own standalone section (added
+       one version ago) into Business Vital Signs instead, at John's
+       request — sits right next to "Invoices awaiting approval" as a
+       7th glance-level card rather than a separate launcher-style
+       tile. Now shows a real live count (fed by the existing
+       api/quotes-pending.js, already used by quote-approvals.html)
+       instead of just being a static link. Kept the bright
+       fluorescent-green styling and stays green unconditionally, same
+       pattern as "Invoices awaiting approval" staying amber
+       unconditionally — both read as categories, not alarms. The
+       whole card is a clickable link straight to quote-approvals.html.
+     v1.12: The Auto Quotation Agent's Command Centre screen
+       (quote-approvals.html) is now live — comparison table, SP
+       dropdown, one-click generate/attach/file. Removed "Automated
+       Quotations" from the "On the Horizon" roadmap (it's no longer
+       a future idea) and gave it a real section instead: a single
+       bright fluorescent-green tile (John's explicit request — this
+       is a new colour in the palette, distinct from Rate Card's amber
+       and Exceptions' red, deliberately eye-catching to flag "new and
+       live") linking straight to quote-approvals.html.
+     v1.11: ADDED "Invoices Awaiting Approval" card — a live count of
+       every Xero invoice still sitting in DRAFT (not yet reviewed/
+       authorised by James), fed by the new api/awaiting-approval.js.
+       Deliberately styled with the existing amber "warning" look
+       (same colour as the Rate Card section) at John's request — this
+       card stays yellow/amber unconditionally, not just when
+       something crosses the stuck threshold, since it's meant to read
+       as "needs approval attention" as a category, same visual
+       language as Rate Card's "needs pricing access" tiles. The stuck
+       count/oldest-days sub-line still updates live underneath. Sixth
+       drill-down added (awaiting-approval-table) listing every Draft
+       invoice, oldest-first, with anything past the same 3-business-
+       day threshold used by clv-invoice-automation's existing
+       xero-draft-check.js alert highlighted the same way overdue
+       receivables/payables rows already are (shared .risk row style)
+       — so the dashboard card and the alert email can never disagree
+       about what counts as "stuck".
+     v1.10: ADDED payables side — "Largest supplier (payables)" card
+       and a fourth drill-down (api/ap-aging.js, the payables mirror
+       of ar-aging.js). Grid changed from a fixed 4-column layout to
+       auto-fit so the 5th card wraps gracefully rather than cramming.
+       IMPORTANT CAVEAT, visible in the drill-down itself: supplier
+       names are shown exactly as recorded in Xero, NOT consolidated —
+       John confirmed at least one real supplier (Remondis) is split
+       across several separate Xero contacts, the same fragmentation
+       problem already found on the client side (Urbis: 13 separate
+       HubSpot companies, one per site, no parent record). Real
+       supplier naming patterns haven't been seen yet
+       (fws-xero-reader still on Demo Company) — deliberately not
+       guessing at a consolidation rule before seeing real data.
+     v1.9: moved Business Vital Signs (and its drill-downs) to the top
+       of the page, right below the header — now the first thing seen,
+       ahead of Agent Health, matching John's request that this be the
+       primary view. Centered the header title/subtitle.
+     v1.8: ADDED Business Vital Signs section — the real thing, not a
+       placeholder. Four glance-level metric cards (Revenue, Blended
+       Margin, AR Overdue, Concentration Risk) fed by three new
+       endpoints (api/margin-by-client.js, api/revenue-by-client.js,
+       api/ar-aging.js), plus three collapsible drill-down sections
+       (native <details>/<summary>, no extra JS needed) showing the
+       full client-by-client tables. Removed the "Business Analysis"
+       placeholder card from "On the Horizon" — it's live now, not a
+       future idea. Note: AR aging currently reflects Demo Company
+       data (fws-xero-reader's live-org swap is still pending James),
+       so real client names/amounts there will update automatically
+       once that's done — no code change needed when it happens.
+     v1.7: ADDED "Confirm & Create Xero Draft" button on exception
+       items of kind "invoice_review" (held HubSpot invoices, per
+       exceptions.js v2.1). Calls the new api/approve-invoice.js proxy
+       in THIS project, which forwards server-side to
+       clv-invoice-automation's api/approve — avoids the same CORS
+       problem Agent Health already solved via api/status.js, since a
+       cross-origin browser call from this page straight to
+       clv-invoice-automation.vercel.app would be blocked. This button
+       does NOT mean the invoice is fully done — it only means the
+       numbers are confirmed correct in HubSpot and a Xero DRAFT has
+       been created; the actual release to the client still happens as
+       a separate step in Xero itself, same as before this button
+       existed. Exception items had to change from a single clickable
+       <a> wrapping the whole row to a <div> containing a separate link
+       (opens the HubSpot record) and a button side by side — a button
+       can't sit inside a clickable link.
+     v1.6: fixed HubSpot launcher link (was landing on Contacts, now
+       goes to the general dashboard homepage). Added WhatsApp Web
+       tile to Launcher — link only for now; a deeper WhatsApp
+       Business API integration (reading/writing James's messages) is
+       a much bigger build, parked pending James's input on capture
+       mechanism (ties into the Point of Sale Capture gap).
+     v1.5: added "On the Horizon" section — dashed-border, non-
+       functional placeholder cards (Business Analysis, Point of Sale
+       Capture, Automated Quotations, Website Content Queue,
+       Sustainability Portal) so James can see the full scope of
+       what's planned, not just what's live, ahead of the 20 Aug
+       meeting.
+     v1.4: added Exceptions & Alerts Feed — live open HubSpot tickets
+       via new api/exceptions.js, using the read-only Service Key
+     v1.3: added Rate Card section (Update-a-Service-Price + Rate Card
+       Admin Tool), flagged as write-access / John & Christine only
+     v1.2: added Launcher section (HubSpot, Xero, Vercel, MS365 tiles)
+     v1.1: added manual pause-note display for Agent 1 / Enrichment Agent
+     v1.0: initial Agent Health cards -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FWS Command Center</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --ok: #22c55e;
+      --error: #ef4444;
+      --unknown: #f59e0b;
+      --quote-green: #39ff14;
+      --invoice-yellow: #eaff00;
+      --margin-red: #ff073a;
+      --company-blue: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 32px 20px 60px;
+    }
+    header {
+      max-width: 1000px;
+      margin: 0 auto 32px;
+      text-align: center;
+    }
+    .logo-wrap {
+      display: inline-block;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 10px 20px;
+      margin-bottom: 14px;
+    }
+    .logo-wrap img {
+      height: 40px;
+      display: block;
+    }
+    header h1 {
+      font-size: 1.6rem;
+      margin: 0 0 4px;
+    }
+    header p {
+      color: var(--muted);
+      margin: 0;
+      font-size: 0.9rem;
+    }
+    .grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .card-top h2 {
+      font-size: 1.05rem;
+      margin: 0;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .dot.error, .dot.unreachable { background: var(--error); box-shadow: 0 0 8px var(--error); }
+    .dot.unknown, .dot.loading { background: var(--unknown); }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      padding: 4px 0;
+      color: var(--muted);
+    }
+    .row span:last-child {
+      color: var(--text);
+      text-align: right;
+    }
+    .status-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+    .status-label.ok { background: rgba(34,197,94,0.15); color: var(--ok); }
+    .status-label.error, .status-label.unreachable { background: rgba(239,68,68,0.15); color: var(--error); }
+    .status-label.unknown, .status-label.loading { background: rgba(245,158,11,0.15); color: var(--unknown); }
+    .manual-note {
+      margin-top: 12px;
+      padding: 8px 10px;
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.35);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      color: var(--unknown);
+    }
+    .refresh-note {
+      max-width: 1000px;
+      margin: 24px auto 0;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+    }
+    .section-heading {
+      max-width: 1000px;
+      margin: 40px auto 16px;
+      font-size: 0.95rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .launcher-grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .launcher-tile {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 16px;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: border-color 0.15s ease;
+    }
+    .launcher-tile:hover {
+      border-color: var(--muted);
+    }
+    .launcher-tile .icon {
+      font-size: 1.3rem;
+      line-height: 1;
+    }
+    .gated-note {
+      max-width: 1000px;
+      margin: 0 auto 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .rate-card-tile {
+      background: var(--card-bg);
+      border: 1px solid rgba(245,158,11,0.35);
+      border-radius: 12px;
+      padding: 18px 16px;
+      text-decoration: none;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .rate-card-tile:hover {
+      border-color: var(--unknown);
+    }
+    .rate-card-tile .title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    .rate-card-tile .desc {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    /* v1.13: Quotations vital-sign card — deliberately its own colour
+       (bright green), distinct from Rate Card's amber and Exceptions'
+       red, so it reads as "new and live". Stays green unconditionally,
+       same pattern as the amber "Invoices awaiting approval" card —
+       both are categories, not alarms. */
+    a.vital-card.quote-vital {
+      display: block;
+      text-decoration: none;
+      color: var(--text);
+      border: 1px solid var(--quote-green);
+      box-shadow: 0 0 12px rgba(57,255,20,0.35);
+      transition: box-shadow 0.15s ease;
+    }
+    a.vital-card.quote-vital:hover {
+      box-shadow: 0 0 18px rgba(57,255,20,0.55);
+    }
+    .vital-card.quote-vital .label { color: var(--quote-green); }
+    .vital-card.quote-vital .value { color: var(--quote-green); }
+    .vital-card.quote-vital .sub { color: var(--quote-green); }
+    /* v1.14: Invoices awaiting approval — own bright fluorescent
+       yellow, same glow treatment as the green Quotations card, so
+       both read as distinct live categories rather than generic amber
+       "warning" (which is still used elsewhere, e.g. Overdue
+       receivables crossing its threshold). */
+    .vital-card.invoice-vital {
+      background: var(--card-bg);
+      border: 1px solid var(--invoice-yellow);
+      box-shadow: 0 0 12px rgba(234,255,0,0.35);
+    }
+    .vital-card.invoice-vital .label { color: var(--invoice-yellow); }
+    .vital-card.invoice-vital .value { color: var(--invoice-yellow); }
+    .vital-card.invoice-vital .sub { color: var(--invoice-yellow); }
+    /* v1.33: Pipeline leaderboard leader — a real black-and-white
+       checkered-flag strip (John's explicit request, "stand out"),
+       with fluorescent yellow text/badge on top for contrast against
+       the alternating black/white squares. Text sits on a solid
+       black pill layered over the pattern (v1.34), rather than
+       directly on the checkered squares — yellow directly on the
+       pattern lost contrast against the white squares specifically,
+       no matter how bold. */
+    .leaderboard-leader {
+      background-color: #fff;
+      background-image:
+        linear-gradient(45deg, #000 25%, transparent 25%),
+        linear-gradient(-45deg, #000 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #000 75%),
+        linear-gradient(-45deg, transparent 75%, #000 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+      border: 2px solid var(--invoice-yellow) !important;
+      box-shadow: 0 0 14px rgba(234,255,0,0.45);
+    }
+    .leaderboard-leader-pill {
+      background: #000;
+      border-radius: 6px;
+      padding: 6px 10px;
+    }
+    .leaderboard-leader-text {
+      color: var(--invoice-yellow);
+      font-weight: 700;
+    }
+    /* v1.23: My Blended Margin on the rep view — fluorescent red,
+       John's explicit request, same glow treatment as the yellow
+       Invoices card and green Quotations card so all three read as
+       distinct, deliberately eye-catching categories. */
+    .vital-card.margin-vital {
+      background: var(--card-bg);
+      border: 1px solid var(--margin-red);
+      box-shadow: 0 0 12px rgba(255,7,58,0.35);
+    }
+    .vital-card.margin-vital .label { color: var(--margin-red); }
+    .vital-card.margin-vital .value { color: var(--margin-red); }
+    .vital-card.margin-vital .sub { color: var(--margin-red); }
+    /* v1.23: Prospect Value Calculator — company blue border/glow,
+       John's explicit request, same visual language as the other
+       highlighted sections on this page. */
+    .calculator-highlight {
+      border-color: var(--company-blue) !important;
+      box-shadow: 0 0 12px rgba(59,130,246,0.35);
+    }
+    .exceptions-list {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .exception-item {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--error);
+      border-radius: 10px;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .exception-item:hover {
+      border-left-color: #f87171;
+    }
+    .exception-item .subject-link {
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .exception-item .subject-link:hover {
+      text-decoration: underline;
+    }
+    .exception-item .right-side {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .exception-item .meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .approve-btn {
+      background: rgba(34,197,94,0.12);
+      border: 1px solid rgba(34,197,94,0.4);
+      color: var(--ok);
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: opacity 0.15s ease;
+    }
+    .approve-btn:hover { border-color: var(--ok); }
+    .approve-btn:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .approve-btn.approve-btn-error {
+      background: rgba(239,68,68,0.12);
+      border-color: rgba(239,68,68,0.4);
+      color: var(--error);
+    }
+    .approve-btn.approve-btn-success {
+      background: rgba(34,197,94,0.2);
+      border-color: var(--ok);
+    }
+    .exceptions-empty {
+      max-width: 1000px;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 20px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+    }
+    /* v1.8: Business Vital Signs */
+    .vital-signs-grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .vital-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .vital-card.flagged {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.35);
+    }
+    .vital-card.warning {
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.35);
+    }
+    .vital-card .label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 0 0 4px;
+    }
+    .vital-card.flagged .label { color: var(--error); }
+    .vital-card.warning .label { color: var(--unknown); }
+    .vital-card .value {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin: 0;
+    }
+    .vital-card.flagged .value { color: var(--error); }
+    .vital-card.warning .value { color: var(--unknown); }
+    .vital-card .sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin: 4px 0 0;
+    }
+    .vital-card.flagged .sub { color: var(--error); }
+    .vital-card.warning .sub { color: var(--unknown); }
+    .drilldown {
+      max-width: 1000px;
+      margin: 12px auto 0;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .drilldown summary {
+      padding: 14px 16px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .drilldown summary::-webkit-details-marker { display: none; }
+    .drilldown summary::after {
+      content: "▾";
+      color: var(--muted);
+      transition: transform 0.15s ease;
+    }
+    .drilldown[open] summary::after { transform: rotate(180deg); }
+    .drilldown table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .drilldown th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .drilldown td {
+      padding: 8px 16px;
+      border-top: 1px solid var(--border);
+    }
+    .drilldown td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .drilldown tr.risk td:first-child { color: var(--error); font-weight: 500; }
+    /* v1.26: total row at the bottom of a drill-down table — bolder
+       text and a slightly heavier top border than a normal data row,
+       so it reads clearly as a sum rather than just another entry. */
+    .drilldown tr.total-row td {
+      font-weight: 600;
+      border-top: 2px solid var(--muted);
+    }
+    .vital-signs-note {
+      max-width: 1000px;
+      margin: 12px auto 0;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .roadmap-grid {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .roadmap-card {
+      background: var(--card-bg);
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      opacity: 0.85;
+    }
+    .roadmap-card .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .roadmap-card h2 {
+      font-size: 1.05rem;
+      margin: 0;
+    }
+    .coming-soon-badge {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(148,163,184,0.15);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .roadmap-card p {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 0;
+      line-height: 1.4;
+    }
+    .roadmap-card ul {
+      margin: 8px 0 0;
+      padding-left: 18px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    button {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--muted); }
+    /* v1.17: period selector */
+    .vital-signs-header {
+      max-width: 1000px;
+      margin: 40px auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .vital-signs-header .section-heading {
+      margin: 0;
+    }
+    #period-select {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    #period-select:hover { border-color: var(--muted); }
+    /* v1.18: rep-view single quote card, shown instead of the full
+       7-card admin grid for role !== 'admin' sessions. */
+    .rep-quote-card-wrap {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-wrap"><img src="/logo.jpg" alt="Future Waste Solutions" /></div>
+    <h1>FWS Command Center</h1>
+    <p id="header-subtitle">Agent Health — live status of all automation systems</p>
+    <p style="margin-top:8px;"><a href="/change-password.html" style="color: var(--muted); font-size: 0.8rem;">Change password</a> &nbsp;·&nbsp; <a href="/api/logout" style="color: var(--muted); font-size: 0.8rem;">Log out</a></p>
+  </header>
+
+  <!-- v1.18: company-wide Business Vital Signs — admin only. Hidden
+       entirely (not just left empty) for rep sessions, since every
+       endpoint it calls now correctly 403s for role !== 'admin'. -->
+  <div id="admin-vital-signs-section">
+    <div class="vital-signs-header">
+      <div class="section-heading">Business Vital Signs</div>
+      <select id="period-select" onchange="onPeriodChange(this.value)">
+        <option value="month">This month</option>
+        <option value="ytd">Year to date</option>
+        <option value="fy">Financial year to date</option>
+      </select>
+    </div>
+    <!-- v1.38: Payables sits second, directly beside Revenue. The
+         card positions below are referenced by NUMBER in
+         setVitalCard() / loadVitalSigns() — 0 Revenue, 1 Payables,
+         2 Blended margin, 3 Overdue receivables, 4 Largest client,
+         5 Largest supplier (payables, from Xero), 6 Invoices awaiting
+         approval, 7 Quotes awaiting approval. If a card is ever added
+         or moved again, those numbers must change with it. -->
+    <div class="vital-signs-grid" id="vital-signs-grid">
+      <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Payables, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Largest supplier (payables)</p><p class="value">…</p></div>
+      <div class="vital-card invoice-vital"><p class="label">Invoices awaiting approval</p><p class="value">…</p></div>
+      <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
+    </div>
+
+    <!-- v1.27: Deal Pipeline — admin only, positioned right beneath
+         the glance-level cards above and above the drill-downs below,
+         per John's explicit placement request. Real HubSpot Deals
+         data (api/deals-pipeline.js), with a Company/person dropdown
+         mirroring the existing period selector's UX. "New clients
+         won" comes from real Closed Won deals; "Clients lost" comes
+         from the "No Longer a Client" company signal, NOT from Deals
+         — churn is an account-loss event, not a deal outcome
+         (confirmed with John). First pass — expect this section to
+         need visual tweaks once seen against real data live. -->
+    <div id="admin-deals-section">
+      <div class="vital-signs-header" style="margin-top:24px;">
+        <div class="section-heading">Deal Pipeline</div>
+        <div style="display:flex; gap:8px;">
+          <!-- v1.30: pipeline selector — per John's request, in case
+               another Deals pipeline gets created later. Populated
+               from api/deals-pipeline.js's own response (real
+               pipelines, nothing hardcoded here), defaulting to
+               Client Acquisition. -->
+          <select id="deals-pipeline-select" onchange="onDealsPipelineChange(this.value)">
+            <option value="">Client Acquisition (default)</option>
+          </select>
+          <select id="deals-owner-select" onchange="onDealsOwnerChange(this.value)">
+            <option value="">Company (all)</option>
+          </select>
+        </div>
+      </div>
+      <div class="vital-signs-grid" id="deals-vital-signs-grid">
+        <div class="vital-card"><p class="label">Open pipeline</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">Weighted pipeline</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">New clients won, this month</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">Clients lost, this month</p><p class="value">…</p></div>
+      </div>
+      <details class="drilldown">
+        <summary>Deals by stage</summary>
+        <div id="deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
+      </details>
+    </div>
+
+    <details class="drilldown">
+      <summary>Margin by client</summary>
+      <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <details class="drilldown">
+      <summary>Revenue by client &amp; waste type</summary>
+      <table id="revenue-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <!-- v1.39: Payables by supplier (HubSpot). Closed by default; the
+         script only fetches it when it is opened (see
+         onSupplierPayablesToggle). Deliberately named "(HubSpot)" so it
+         is never confused with the Xero "(aging)" one further down. -->
+    <details class="drilldown" id="supplier-payables-details" ontoggle="onSupplierPayablesToggle(this)">
+      <summary>Payables by supplier (HubSpot — what suppliers billed us)</summary>
+      <table id="supplier-payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Open to load…</td></tr></tbody></table>
+      <div class="vital-signs-note" id="supplier-payables-note" style="margin:0; padding:10px 16px 14px;"></div>
+    </details>
+
+    <details class="drilldown">
+      <summary>Receivables aging</summary>
+      <table id="aging-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <details class="drilldown">
+      <summary>Payables by supplier (aging)</summary>
+      <table id="payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <details class="drilldown">
+      <summary>Invoices awaiting approval</summary>
+      <table id="awaiting-approval-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+
+    <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. The Payables card (next to Revenue) is the supplier cost on those same passed invoices, so Revenue minus Payables agrees with Blended margin — it is what suppliers billed us through HubSpot in the period, paid or not, and it turns amber if less than 90% of the revenue has a supplier cost recorded against it. Receivables, "Largest supplier (payables)", and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck. Open "Payables by supplier (HubSpot)" for the supplier-by-supplier breakdown of the Payables card.</div>
+  </div>
+
+  <!-- v1.20: rep-view — a real scoped mini dashboard (own revenue,
+       own margin, quotes) instead of just a single Quotes card.
+       Backed by the new api/my-sales.js, which reuses the exact same
+       calculation logic as the admin margin-by-client.js /
+       revenue-by-client.js, filtered to only this person's own
+       HubSpot-owned client companies. -->
+  <div id="rep-quotes-section" style="display:none;">
+    <div class="vital-signs-header">
+      <div class="section-heading">Your Sales Centre</div>
+      <select id="rep-period-select" onchange="onPeriodChange(this.value)">
+        <option value="month">This month</option>
+        <option value="ytd">Year to date</option>
+        <option value="fy">Financial year to date</option>
+      </select>
+    </div>
+    <div class="vital-signs-grid" id="rep-vital-signs-grid">
+      <div class="vital-card"><p class="label">My revenue, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">My blended margin</p><p class="value">…</p></div>
+      <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
+    </div>
+    <details class="drilldown">
+      <summary>My clients</summary>
+      <table id="my-clients-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+  </div>
+
+  <!-- v1.27: Pipeline leaderboard — visible to every logged-in rep,
+       admin included, same "Market Opportunity is for everyone"
+       reasoning. Totals only for other reps (real competitive
+       motivator, John's explicit request); full deal detail stays
+       private to your own row. Backed by api/deals-leaderboard.js. -->
+  <div id="deals-leaderboard-section">
+    <div class="section-heading">Pipeline leaderboard</div>
+    <div id="deals-leaderboard-list" style="max-width:1000px; margin:0 auto; display:flex; flex-direction:column; gap:8px;">
+      <p style="color:var(--muted); font-size:0.85rem;">Loading…</p>
+    </div>
+    <!-- v1.31: My deals by stage — per John's request, same bar-chart
+         shape as the admin Deal Pipeline's own breakdown, scoped to
+         just this rep's own deals. -->
+    <details class="drilldown" style="max-width:1000px; margin:12px auto 0;">
+      <summary>My deals by stage</summary>
+      <div id="my-deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
+    </details>
+    <details class="drilldown" style="max-width:1000px; margin:12px auto 0;">
+      <summary>Your deals</summary>
+      <table id="my-deals-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+    </details>
+  </div>
+
+  <!-- v1.19: Agent Health — admin only. A rep has no reason to see
+       the automation system's own health/version status, same
+       reasoning as Xero/Vercel in the Launcher. -->
+  <div id="agent-health-section">
+    <div class="grid" id="agent-grid">
+      <div class="card">
+        <div class="card-top"><h2>Loading agents...</h2><div class="dot loading"></div></div>
+      </div>
+    </div>
+
+    <div class="refresh-note">
+      <span id="last-checked">Checking...</span>
+      &nbsp;·&nbsp;
+      <button onclick="loadStatus()">Refresh now</button>
+    </div>
+  </div>
+
+  <!-- v1.20: Market Opportunity — deliberately visible to EVERY
+       logged-in role, admin and rep alike. This isn't sensitive
+       per-client data, it's the recruiting/motivation figure: real,
+       live-counted HubSpot enrichment data (Aged Care beds,
+       Retirement Village units) turned into a concrete rep earning
+       potential, using real historical rates John personally managed.
+       See api/market-opportunity.js for the full methodology and
+       sourcing notes. -->
+  <div class="section-heading">Market Opportunity</div>
+  <div class="vital-signs-grid" id="market-opportunity-grid">
+    <div class="vital-card"><p class="label">Aged Care — rep earning potential</p><p class="value">…</p></div>
+    <div class="vital-card"><p class="label">Retirement Villages — rep earning potential</p><p class="value">…</p></div>
+  </div>
+  <div class="vital-signs-note" id="market-opportunity-note"></div>
+
+  <!-- v1.21: Prospect Value Calculator — lets any logged-in person
+       estimate a prospective site's annual value using REAL current
+       rate card pricing (via api/rate-lookup.js), not a separately
+       maintained guess. A rep builds up a running estimate line by
+       line (waste type, bin size, quantity, frequency), and each
+       line's price comes straight from the live rate card, so an
+       estimate can never quietly drift out of sync with what a real
+       client would actually be billed. Purely client-side accumulation
+       — nothing is saved server-side, this is a sandbox tool. -->
+  <div class="section-heading">Prospect Value Calculator</div>
+  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
+    <summary>Estimate a prospective site's annual value</summary>
+    <!-- v1.36: NEW — quick commission estimate, per John's request: a
+         simple direct-entry alternative for when a rep already has a
+         ballpark annual revenue figure in mind (e.g. a big multi-site
+         portfolio deal) rather than building it up service by
+         service below. Reuses the EXACT same CALC_REP_SHARE_OF_GP_PERCENT
+         constant as the line-item builder underneath, so the two can
+         never quietly disagree on what a rep's share actually means.
+         Updates live as you type — no "Add" button, since it's a
+         single quick figure, not a running list. -->
+    <div style="padding:16px; border-bottom:1px solid var(--border); display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Quick estimate — annual revenue</label>
+        <input id="quick-annual-revenue" type="number" min="0" step="1000" placeholder="e.g. 500000" oninput="updateQuickCommissionEstimate()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Margin %</label>
+        <input id="quick-margin" type="number" min="0" max="100" step="0.1" value="15.5" oninput="updateQuickCommissionEstimate()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+      </div>
+      <div style="flex:1; min-width:200px;">
+        <p style="font-size:0.95rem; font-weight:600; margin:0; color:var(--quote-green);" id="quick-commission-annual">Annual commission: $0</p>
+        <p style="font-size:0.95rem; font-weight:600; margin:2px 0 0; color:var(--quote-green);" id="quick-commission-monthly">Monthly commission: $0</p>
+        <p style="font-size:0.72rem; color:var(--muted); margin:4px 0 0;">*at 40% of gross profit — same formula as the detailed estimate below</p>
+      </div>
+    </div>
+    <div style="padding:16px; display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Waste type</label>
+        <select id="calc-waste-type" onchange="onCalcWasteTypeChange()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="General Waste">General Waste</option>
+          <option value="Co-Mingle">Co-Mingle</option>
+          <option value="Paper and Cardboard">Paper and Cardboard</option>
+          <option value="Green Waste">Green Waste</option>
+          <option value="Grease Trap">Grease Trap</option>
+          <option value="Liquid Waste">Liquid Waste</option>
+          <option value="Mattresses">Mattresses</option>
+          <option value="Soft Plastics">Soft Plastics</option>
+        </select>
+      </div>
+      <div id="calc-bin-size-wrap">
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Bin size (optional)</label>
+        <input id="calc-bin-size" type="text" placeholder="e.g. 1100L, 3.0m" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:130px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;" id="calc-quantity-label">Quantity</label>
+        <input id="calc-quantity" type="number" min="1" value="1" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:80px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Frequency</label>
+        <select id="calc-frequency" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="52">Weekly</option>
+          <option value="104">Twice a week</option>
+          <option value="156">3 times a week</option>
+          <option value="208">4 times a week</option>
+          <option value="260">5 times a week</option>
+          <option value="312">6 times a week</option>
+          <option value="364">7 times a week</option>
+          <option value="26">Fortnightly (every 2 weeks)</option>
+          <option value="12">Monthly</option>
+          <option value="4">Every 13 weeks</option>
+          <option value="2">Every 26 weeks</option>
+          <option value="1">Once a year</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Price source</label>
+        <select id="calc-price-source" onchange="onCalcPriceSourceChange()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="ratecard">Rate card median</option>
+          <option value="manual">I'll enter it</option>
+        </select>
+      </div>
+      <div id="calc-manual-price-wrap" style="display:none;">
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">$/unit</label>
+        <input id="calc-manual-price" type="number" min="0" step="0.01" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:90px;" />
+      </div>
+      <div>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Margin %</label>
+        <input id="calc-margin" type="number" min="0" max="100" step="0.1" value="15.5" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+      </div>
+      <button onclick="addCalculatorLine()">Add to estimate</button>
+    </div>
+    <div id="calc-status" style="padding:0 16px 12px; font-size:0.8rem; color:var(--muted);"></div>
+    <table id="calc-lines-table" style="display:none;">
+      <thead><tr><th>Waste type</th><th>Bin size</th><th>Qty</th><th>Freq/yr</th><th>$/unit</th><th>Margin</th><th>Est. annual revenue</th><th>Rep earning*</th><th></th></tr></thead>
+      <tbody id="calc-lines-body"></tbody>
+    </table>
+    <div style="padding:16px; text-align:right;">
+      <div style="font-size:1.1rem; font-weight:600;" id="calc-total">Estimated annual revenue: $0</div>
+      <div style="font-size:0.95rem; color:var(--quote-green); margin-top:4px;" id="calc-earning-total">Rep earning potential*: $0</div>
+      <div style="font-size:0.72rem; color:var(--muted); margin-top:6px;">*at 40% of gross profit — the same formula used on the Market Opportunity cards above</div>
+    </div>
+  </div>
+
+  <!-- v1.24: Request a New Quote — lets a rep kick off a real quote
+       request straight from the Sales Command Centre, instead of
+       writing an email to quotes@futurewaste.com.au by hand. Calls
+       the Auto Quotation Agent's real submit_quote_request endpoint
+       via api/submit-quote-request.js (server-side proxy, avoiding
+       the same CORS issue solved elsewhere on this page). Two modes,
+       matching the agent's own two accepted request shapes exactly. -->
+  <div class="section-heading">Request a New Quote</div>
+  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
+    <summary>Start a new quote request</summary>
+    <div style="padding:16px;">
+      <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">How do you want to enter this?</label>
+        <select id="quote-req-mode" onchange="onQuoteReqModeChange()" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+          <option value="structured">Fill in the details</option>
+          <option value="freeform">Just describe it in a sentence</option>
+        </select>
+      </div>
+
+      <div id="quote-req-structured">
+        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end;">
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Waste type *</label>
+            <select id="qr-waste-type" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
+              <option value="General Waste">General Waste</option>
+              <option value="Co-Mingle">Co-Mingle</option>
+              <option value="Paper and Cardboard">Paper and Cardboard</option>
+              <option value="Green Waste">Green Waste</option>
+              <option value="Grease Trap">Grease Trap</option>
+              <option value="Liquid Waste">Liquid Waste</option>
+              <option value="Mattresses">Mattresses</option>
+              <option value="Soft Plastics">Soft Plastics</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Container</label>
+            <input id="qr-container" type="text" placeholder="e.g. 660L" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:100px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Qty</label>
+            <input id="qr-container-qty" type="number" min="1" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Frequency</label>
+            <input id="qr-frequency" type="text" placeholder="e.g. Weekly" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:110px;" />
+          </div>
+          <button type="button" onclick="addQuoteReqLine()">Add line</button>
+        </div>
+        <div id="qr-lines-status" style="font-size:0.78rem; color:var(--muted); margin-top:6px;"></div>
+        <table id="qr-lines-table" style="display:none; margin-top:8px;">
+          <thead><tr><th>Waste type</th><th>Container</th><th>Qty</th><th>Frequency</th><th></th></tr></thead>
+          <tbody id="qr-lines-body"></tbody>
+        </table>
+
+        <div style="border-top:1px solid var(--border); margin:16px 0; padding-top:12px; display:flex; flex-wrap:wrap; gap:12px;">
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Suburb *</label>
+            <input id="qr-suburb" type="text" placeholder="e.g. Newtown" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">State</label>
+            <input id="qr-state" type="text" value="NSW" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client name</label>
+            <input id="qr-client-name" type="text" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:220px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client contact email</label>
+            <input id="qr-client-email" type="email" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:200px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Margin instruction</label>
+            <input id="qr-margin" type="text" placeholder="e.g. 20%" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:90px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Named SP contact (optional)</label>
+            <input id="qr-sp-contact" type="text" placeholder="e.g. Celeste" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
+          </div>
+          <div>
+            <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">SP company hint</label>
+            <input id="qr-sp-company" type="text" placeholder="e.g. Remondis" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
+          </div>
+        </div>
+      </div>
+
+      <div id="quote-req-freeform" style="display:none;">
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Describe the job</label>
+        <textarea id="qr-freeform-text" rows="3" placeholder="e.g. Quote for a site in Newtown, 2 x 660L General waste bins weekly, margin 20%, send to Remondis" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-family:inherit;"></textarea>
+        <label style="display:block; font-size:0.75rem; color:var(--muted); margin:8px 0 4px;">Client name (optional, more reliable than letting it guess)</label>
+        <input id="qr-freeform-client-name" type="text" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:280px;" />
+      </div>
+
+      <div style="margin-top:16px;">
+        <button onclick="submitQuoteRequest()" id="qr-submit-btn">Send request</button>
+      </div>
+      <div id="qr-status" style="margin-top:10px; font-size:0.85rem;"></div>
+    </div>
+  </div>
+
+  <div class="section-heading">Launcher</div>
+  <div class="launcher-grid">
+    <a class="launcher-tile" href="https://app.hubspot.com/" target="_blank" rel="noopener">
+      <span class="icon">🧭</span> HubSpot
+    </a>
+    <a class="launcher-tile admin-only-tile" href="https://go.xero.com/" target="_blank" rel="noopener">
+      <span class="icon">💰</span> Xero
+    </a>
+    <a class="launcher-tile admin-only-tile" href="https://vercel.com/john0421299925s-projects" target="_blank" rel="noopener">
+      <span class="icon">▲</span> Vercel
+    </a>
+    <a class="launcher-tile" href="https://outlook.office.com/mail/" target="_blank" rel="noopener">
+      <span class="icon">✉️</span> MS365 / Outlook
+    </a>
+    <a class="launcher-tile" href="https://web.whatsapp.com/" target="_blank" rel="noopener">
+      <span class="icon">💬</span> WhatsApp Web
+    </a>
+  </div>
+
+  <!-- v1.18: Rate Card — visibility now driven by the session's
+       canEditRateCard flag specifically, NOT by role. This is what
+       lets Christine (role "rep", canEditRateCard true) see it while
+       Stuart (role "rep", canEditRateCard false) does not, and it
+       still shows correctly for admins (John, James) too. -->
+  <div id="rate-card-section">
+    <div class="section-heading">Rate Card</div>
+    <div class="gated-note">Write access — these tools write directly to HubSpot pricing</div>
+    <div class="launcher-grid">
+      <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-update.html" target="_blank" rel="noopener">
+        <div class="title-row">⚡ Update a Service Price</div>
+        <div class="desc">Quick single-price change — cascading dropdown</div>
+      </a>
+      <a class="rate-card-tile" href="https://clv-invoice-automation.vercel.app/rate-card-admin.html" target="_blank" rel="noopener">
+        <div class="title-row">📋 Rate Card Admin Tool</div>
+        <div class="desc">Browse &amp; edit, new service, bulk import/export</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- v1.18: Exceptions & Alerts — admin only, same reasoning as the
+       Business Vital Signs section above. -->
+  <div id="exceptions-section">
+    <div class="section-heading" id="exceptions-heading">Exceptions &amp; Alerts</div>
+    <div class="exceptions-list" id="exceptions-list">
+      <div class="exceptions-empty">Loading open tickets…</div>
+    </div>
+  </div>
+
+
+  <div class="section-heading">On the Horizon</div>
+  <div class="roadmap-grid">
+    <div class="roadmap-card">
+      <div class="card-top"><h2>🎤 Point of Sale Capture</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>James leaves a voice note or voicemail with new client/service details.</p>
+      <ul>
+        <li>Voice → draft Company + Services record</li>
+        <li>One-click confirm by James or Christine</li>
+        <li>Capture mechanism to be chosen by James</li>
+      </ul>
+    </div>
+    <div class="roadmap-card">
+      <div class="card-top"><h2>🌐 Website Content Queue</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>Marketing &amp; website content drafted by Claude, reviewed before publishing.</p>
+      <ul>
+        <li>Case studies, thought leadership, site copy</li>
+        <li>Drafts awaiting review, recently published</li>
+        <li>Credibility-focused, not sales-focused</li>
+      </ul>
+    </div>
+    <div class="roadmap-card">
+      <div class="card-top"><h2>🌱 Sustainability Portal</h2><span class="coming-soon-badge">Coming soon</span></div>
+      <p>Always-on client-facing sustainability reporting, not just periodic reports.</p>
+      <ul>
+        <li>Live diversion/recovery data by client</li>
+        <li>Genuine market differentiator</li>
+        <li>Parked — needs sample reports first</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    // v1.18: role-aware rendering. checkAuth() now stores the full
+    // session (role, canEditRateCard, name) rather than just checking
+    // for a 401, and initPage() decides what to show/fetch based on
+    // it — admin sees the full company-wide dashboard exactly as
+    // before, a rep session (Christine, Stuart, future reps) sees a
+    // stripped-down view (just their Quotes card + Agent Health),
+    // and Rate Card visibility is driven by canEditRateCard
+    // specifically, independent of role, so Christine (rep +
+    // canEditRateCard true) still sees it while Stuart doesn't.
+    let currentSession = null;
+    let isAdminGlobal = false;
+
+    (async function checkAuth() {
+      try {
+        const resp = await fetch('/api/whoami');
+        if (resp.status === 401) {
+          window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname);
+          return;
+        }
+        const data = await resp.json();
+        currentSession = data;
+        initPage(currentSession);
+      } catch (err) {
+        // If the check itself fails, let the page continue with
+        // whatever's already visible rather than trap the person on a
+        // broken redirect loop — individual data calls will still
+        // fail safely with 401s/403s.
+        initPage(null);
+      }
+    })();
+
+    function initPage(session) {
+      const isAdmin = session && session.role === 'admin';
+      isAdminGlobal = isAdmin;
+      const canEditRateCard = Boolean(session && session.canEditRateCard);
+
+      document.getElementById('admin-vital-signs-section').style.display = isAdmin ? '' : 'none';
+      document.getElementById('exceptions-section').style.display = isAdmin ? '' : 'none';
+      document.getElementById('rep-quotes-section').style.display = isAdmin ? 'none' : '';
+      document.getElementById('rate-card-section').style.display = canEditRateCard ? '' : 'none';
+      document.getElementById('agent-health-section').style.display = isAdmin ? '' : 'none';
+      // v1.27: Deal Pipeline (admin-only, company-wide) vs the
+      // leaderboard (every logged-in role, same visibility rule
+      // already used for Market Opportunity below).
+      document.getElementById('admin-deals-section').style.display = isAdmin ? '' : 'none';
+
+      // v1.18: Xero and Vercel launcher tiles are only relevant to
+      // admins — a rep has no reason to jump into either, so they're
+      // hidden rather than shown as dead-end links.
+      document.querySelectorAll('.admin-only-tile').forEach((el) => {
+        el.style.display = isAdmin ? '' : 'none';
+      });
+
+      if (session && session.name) {
+        document.getElementById('header-subtitle').textContent =
+          isAdmin ? 'Agent Health — live status of all automation systems' : `Welcome, ${session.name}`;
+      }
+
+      // v1.28: NEW — a small stagger helper, added directly after a
+      // real incident (24 Sept 2026): ten different HubSpot-calling
+      // requests were firing in the same ~60ms window on page load
+      // (status, vital signs, exceptions, deals-pipeline,
+      // deals-leaderboard, market opportunity, and more) — enough to
+      // exhaust HubSpot's per-second rate limit even with retry logic
+      // already in every one of them, confirmed directly in HubSpot's
+      // own API log ("You have reached your secondly limit") and in
+      // Vercel's logs showing several of these still failing even
+      // after a retry attempt, because several concurrent retriers
+      // collide again at the same 1-second mark. Retrying harder
+      // can't fix a "too much at once" problem — spreading the
+      // INITIAL calls out over a couple of seconds, so they don't
+      // all land in HubSpot's rate-limit window together, is the
+      // real fix. Each subsequent periodic refresh naturally inherits
+      // the same stagger, since setInterval is registered from within
+      // the delayed call itself.
+      function startStaggered(fn, delayMs, intervalMs) {
+        setTimeout(() => {
+          fn();
+          setInterval(fn, intervalMs);
+        }, delayMs);
+      }
+
+      // v1.19: Agent Health is admin-only and hidden for reps — no
+      // reason to poll status.js at all when it's not being shown.
+      if (isAdmin) {
+        startStaggered(loadStatus, 0, 60000);
+      }
+
+      if (isAdmin) {
+        startStaggered(loadVitalSigns, 0, 300000);
+        startStaggered(loadExceptions, 1200, 60000);
+        startStaggered(loadDealsPipeline, 2400, 300000);
+      } else {
+        startStaggered(loadMySales, 0, 300000);
+      }
+
+      // v1.27: leaderboard loads for EVERYONE, same reasoning as
+      // Market Opportunity below — it's the motivational, company-
+      // wide figure, not gated per-client data.
+      startStaggered(loadDealsLeaderboard, isAdmin ? 3600 : 1200, 300000);
+
+      // v1.20: Market Opportunity loads for EVERYONE, regardless of
+      // role — it's a recruiting/motivation figure, not gated data.
+      startStaggered(loadMarketOpportunity, isAdmin ? 4800 : 2400, 3600000);
+    }
+
+    // v1.27: Deal Pipeline (admin) — real HubSpot Deals data via
+    // api/deals-pipeline.js. Owner dropdown is populated from the
+    // endpoint's own response (only people who actually have open
+    // deals right now), not a hardcoded list.
+    // v1.30: pipeline dropdown, same pattern — populated from the
+    // endpoint's own real pipeline list, empty value means "let the
+    // backend default to Client Acquisition".
+    let selectedDealsOwnerId = '';
+    let selectedDealsPipelineId = '';
+    function onDealsOwnerChange(value) {
+      selectedDealsOwnerId = value;
+      loadDealsPipeline();
+    }
+    function onDealsPipelineChange(value) {
+      selectedDealsPipelineId = value;
+      loadDealsPipeline();
+    }
+
+    async function loadDealsPipeline() {
+      const requestOwnerId = selectedDealsOwnerId;
+      const requestPipelineId = selectedDealsPipelineId;
+      try {
+        const url = '/api/deals-pipeline?period=' + selectedPeriod
+          + (requestOwnerId ? '&ownerId=' + encodeURIComponent(requestOwnerId) : '')
+          + (requestPipelineId ? '&pipelineId=' + encodeURIComponent(requestPipelineId) : '');
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (requestOwnerId !== selectedDealsOwnerId || requestPipelineId !== selectedDealsPipelineId) return; // stale — a newer selection has since started
+
+        const grid = document.getElementById('deals-vital-signs-grid');
+        if (data.status !== 'ok') {
+          grid.children[0].innerHTML = '<p class="label">Open pipeline</p><p class="value">—</p><p class="sub">Could not load</p>';
+          grid.children[1].innerHTML = '<p class="label">Weighted pipeline</p><p class="value">—</p>';
+          grid.children[2].innerHTML = '<p class="label">New clients won, this month</p><p class="value">—</p>';
+          grid.children[3].innerHTML = '<p class="label">Clients lost, this month</p><p class="value">—</p>';
+          return;
+        }
+
+        // Populate the pipeline dropdown once, from real data.
+        const pipelineSelect = document.getElementById('deals-pipeline-select');
+        if (pipelineSelect.options.length === 1 && data.pipelines && data.pipelines.length > 1) {
+          for (const pipeline of data.pipelines) {
+            if (pipeline.id === data.selectedPipelineId) continue; // already the default option
+            const opt = document.createElement('option');
+            opt.value = pipeline.id;
+            opt.textContent = pipeline.label;
+            pipelineSelect.appendChild(opt);
+          }
+        }
+
+        // Populate the owner dropdown once, from real data — not on
+        // every refresh, so the person's current selection survives.
+        const select = document.getElementById('deals-owner-select');
+        if (select.options.length === 1 && data.owners && data.owners.length > 0) {
+          for (const owner of data.owners) {
+            const opt = document.createElement('option');
+            opt.value = owner.id;
+            opt.textContent = owner.name;
+            select.appendChild(opt);
+          }
+        }
+
+        grid.children[0].innerHTML = `<p class="label">Open pipeline</p><p class="value">${money(data.openPipelineTotal)}</p>`;
+        grid.children[1].innerHTML = `<p class="label">Weighted pipeline</p><p class="value">${money(data.weightedPipelineTotal)}</p>`;
+        grid.children[2].className = 'vital-card';
+        grid.children[2].style.background = 'var(--bg-success, rgba(34,197,94,0.12))';
+        grid.children[2].innerHTML = `<p class="label" style="color:var(--ok)">New clients won, ${data.periodLabel}</p><p class="value" style="color:var(--ok)">${data.newClientsWon.count}</p><p class="sub" style="color:var(--ok)">${money(data.newClientsWon.amount)}</p>`;
+        grid.children[3].innerHTML = `<p class="label" style="color:var(--error)">Clients lost, ${data.periodLabel}</p><p class="value" style="color:var(--error)">${data.clientsLost.count}</p><p class="sub" style="color:var(--error)">${money(data.clientsLost.amount)} est.</p>`;
+
+        const stageBody = document.getElementById('deals-by-stage-body');
+        if (data.dealsByStage.length > 0) {
+          const maxAmount = Math.max(...data.dealsByStage.map((s) => s.amount));
+          stageBody.innerHTML = data.dealsByStage.map((s) => `
+            <div style="margin-bottom:10px;">
+              <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+                <span>${s.stage}</span>
+                <span style="color:var(--muted)">${s.count} · ${money(s.amount)}</span>
+              </div>
+              <div style="height:6px; background:var(--bg); border-radius:3px; overflow:hidden;">
+                <div style="height:100%; width:${maxAmount > 0 ? Math.round((s.amount / maxAmount) * 100) : 0}%; background:var(--company-blue);"></div>
+              </div>
+            </div>`).join('');
+        } else {
+          stageBody.innerHTML = '<p style="color:var(--muted); margin:0;">No open deals in this stage breakdown.</p>';
+        }
+      } catch (err) {
+        console.error('loadDealsPipeline failed:', err);
+      }
+    }
+
+    // v1.27: Pipeline leaderboard (every role) — totals only for
+    // other reps, full deal list only for your own row. See
+    // api/deals-leaderboard.js for the session.ownerId dependency
+    // this relies on to identify "your" deals.
+    async function loadDealsLeaderboard() {
+      const list = document.getElementById('deals-leaderboard-list');
+      const table = document.getElementById('my-deals-table');
+      const stageBody = document.getElementById('my-deals-by-stage-body');
+      try {
+        const res = await fetch('/api/deals-leaderboard?period=' + selectedPeriod);
+        const data = await res.json();
+
+        if (data.status !== 'ok' || data.leaderboard.length === 0) {
+          list.innerHTML = '<p style="color:var(--muted); font-size:0.85rem;">No open deals to rank right now.</p>';
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">—</td></tr></tbody>';
+          stageBody.innerHTML = '<p style="color:var(--muted); margin:0;">—</p>';
+          return;
+        }
+
+        list.innerHTML = data.leaderboard.map((entry, i) => {
+          const isLeader = i === 0;
+          const badgeBg = isLeader ? '#000' : (entry.isYou ? 'var(--company-blue)' : 'var(--bg)');
+          const badgeColor = isLeader ? 'var(--invoice-yellow)' : (entry.isYou ? '#fff' : 'var(--text)');
+          const badgeContent = isLeader ? '&#10003;' : (i + 1);
+          const textClass = isLeader ? 'leaderboard-leader-text' : '';
+          const nameBlock = `
+            <p class="${textClass}" style="font-size:0.9rem; font-weight:500; margin:0;">${entry.name}${entry.isYou ? ' (you)' : ''}</p>
+            <p class="${textClass}" style="font-size:0.78rem; margin:0; ${isLeader ? '' : 'color:var(--muted);'}">${entry.dealCount} open deal${entry.dealCount === 1 ? '' : 's'}</p>`;
+          const amountBlock = `<p class="${textClass}" style="font-size:0.95rem; font-weight:500; margin:0;">${money(entry.openPipelineTotal)}</p>`;
+          return `
+          <div class="${isLeader ? 'leaderboard-leader' : ''}" style="display:flex; align-items:center; gap:10px; ${isLeader ? '' : `background:${entry.isYou ? 'rgba(59,130,246,0.12)' : 'var(--card-bg)'}; border:1px solid ${entry.isYou ? 'var(--company-blue)' : 'var(--border)'};`} border-radius:8px; padding:10px 12px;">
+            <div style="width:22px; height:22px; border-radius:50%; background:${badgeBg}; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:${badgeColor};">${badgeContent}</div>
+            ${isLeader
+              ? `<div class="leaderboard-leader-pill" style="display:inline-block;">${nameBlock}</div><div style="flex:1;"></div><div class="leaderboard-leader-pill">${amountBlock}</div>`
+              : `<div style="flex:1;">${nameBlock}</div>${amountBlock}`}
+          </div>`;
+        }).join('');
+
+        if (data.myDeals.length > 0) {
+          table.innerHTML = `
+            <thead><tr><th>Deal</th><th>Stage</th><th>Amount</th></tr></thead>
+            <tbody>${data.myDeals.map((d) => `<tr><td>${d.name}</td><td>${d.stage}</td><td class="num">${money(d.amount)}</td></tr>`).join('')}</tbody>`;
+        } else {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No open deals owned by you right now.</td></tr></tbody>';
+        }
+
+        // v1.31: My deals by stage — same bar-chart pattern as the
+        // admin Deal Pipeline's own breakdown.
+        if (data.myDealsByStage && data.myDealsByStage.length > 0) {
+          const maxAmount = Math.max(...data.myDealsByStage.map((s) => s.amount));
+          stageBody.innerHTML = data.myDealsByStage.map((s) => `
+            <div style="margin-bottom:10px;">
+              <div style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+                <span>${s.stage}</span>
+                <span style="color:var(--muted)">${s.count} · ${money(s.amount)}</span>
+              </div>
+              <div style="height:6px; background:var(--bg); border-radius:3px; overflow:hidden;">
+                <div style="height:100%; width:${maxAmount > 0 ? Math.round((s.amount / maxAmount) * 100) : 0}%; background:var(--company-blue);"></div>
+              </div>
+            </div>`).join('');
+        } else {
+          stageBody.innerHTML = '<p style="color:var(--muted); margin:0;">No open deals owned by you right now.</p>';
+        }
+      } catch (err) {
+        console.error('loadDealsLeaderboard failed:', err);
+      }
+    }
+
+    // v1.20: real, live-counted opportunity figures — see
+    // api/market-opportunity.js for the full methodology.
+    // v1.21: Prospect Value Calculator — purely client-side line
+    // accumulation. Each line's price comes from a real rate-lookup
+    // call (api/rate-lookup.js), never invented or cached locally, so
+    // it always reflects current rate card pricing.
+    // v1.22: Grease Trap and Liquid Waste are priced purely per litre
+    // in the real rate card — there's no bin_size for these at all
+    // (confirmed: every real Grease Trap entry has bin_size blank,
+    // the actual volume lives in the Quantity field here). Typing
+    // litres into Bin Size would silently do nothing useful (it just
+    // triggers the broader fallback search), so instead the Bin Size
+    // field is hidden and Quantity is relabelled for these two types
+    // — the litre volume belongs in Quantity, not Bin Size.
+    const LITRE_BASED_WASTE_TYPES = new Set(['Grease Trap', 'Liquid Waste']);
+
+    function onCalcWasteTypeChange() {
+      const wasteType = document.getElementById('calc-waste-type').value;
+      const isLitreBased = LITRE_BASED_WASTE_TYPES.has(wasteType);
+      document.getElementById('calc-bin-size-wrap').style.display = isLitreBased ? 'none' : '';
+      document.getElementById('calc-quantity-label').textContent = isLitreBased ? 'Litres per collection' : 'Quantity';
+      if (isLitreBased) {
+        document.getElementById('calc-bin-size').value = '';
+      }
+    }
+
+    function onCalcPriceSourceChange() {
+      const isManual = document.getElementById('calc-price-source').value === 'manual';
+      document.getElementById('calc-manual-price-wrap').style.display = isManual ? '' : 'none';
+    }
+
+    // Same fixed rep-share-of-gross-profit used on the Market
+    // Opportunity cards (api/market-opportunity.js) — kept identical
+    // so this calculator's "Rep earning" figure and that card's
+    // figures can never disagree about what a rep's share means.
+    const CALC_REP_SHARE_OF_GP_PERCENT = 40;
+
+    // v1.36: NEW — the quick direct-entry estimate's live calculation.
+    // Deliberately the exact same two-step formula as the line-item
+    // builder below (revenue × margin% = gross profit, × rep share% =
+    // commission) — just skipping the "build it up service by
+    // service" step when a rep already has a ballpark annual figure.
+    function updateQuickCommissionEstimate() {
+      const annualRevenue = parseFloat(document.getElementById('quick-annual-revenue').value) || 0;
+      const marginPercent = parseFloat(document.getElementById('quick-margin').value) || 0;
+      const grossProfit = annualRevenue * (marginPercent / 100);
+      const annualCommission = grossProfit * (CALC_REP_SHARE_OF_GP_PERCENT / 100);
+      const monthlyCommission = annualCommission / 12;
+      document.getElementById('quick-commission-annual').textContent = `Annual commission: ${money(annualCommission)}`;
+      document.getElementById('quick-commission-monthly').textContent = `Monthly commission: ${money(monthlyCommission)}`;
+    }
+
+    let calculatorLines = [];
+
+    async function addCalculatorLine() {
+      const wasteType = document.getElementById('calc-waste-type').value;
+      const binSize = document.getElementById('calc-bin-size').value.trim();
+      const quantity = parseFloat(document.getElementById('calc-quantity').value) || 1;
+      const frequencyPerYear = parseFloat(document.getElementById('calc-frequency').value);
+      const marginPercent = parseFloat(document.getElementById('calc-margin').value) || 0;
+      const priceSource = document.getElementById('calc-price-source').value;
+      const status = document.getElementById('calc-status');
+
+      let unitPrice;
+      let priceLabel;
+      let priceNote = '';
+
+      if (priceSource === 'manual') {
+        unitPrice = parseFloat(document.getElementById('calc-manual-price').value);
+        if (!unitPrice || unitPrice <= 0) {
+          status.textContent = 'Enter a $/unit amount first.';
+          return;
+        }
+        priceLabel = money(unitPrice) + ' (manual)';
+        status.textContent = 'Using the price you entered — not looked up from the rate card.';
+      } else {
+        status.textContent = 'Looking up real rate card pricing…';
+        try {
+          const url = '/api/rate-lookup?wasteType=' + encodeURIComponent(wasteType) + (binSize ? '&binSize=' + encodeURIComponent(binSize) : '');
+          const res = await fetch(url);
+          const data = await res.json();
+
+          if (data.status !== 'ok' || !data.sampleSize) {
+            status.textContent = data.note || 'Could not find pricing for that combination.';
+            return;
+          }
+          unitPrice = data.medianPrice;
+          priceLabel = money(unitPrice);
+          priceNote = data.note;
+          status.textContent = priceNote;
+        } catch (err) {
+          status.textContent = 'Lookup failed — try again.';
+          console.error('addCalculatorLine failed:', err);
+          return;
+        }
+      }
+
+      const annualRevenue = unitPrice * quantity * frequencyPerYear;
+      const grossProfit = annualRevenue * (marginPercent / 100);
+      const repEarning = grossProfit * (CALC_REP_SHARE_OF_GP_PERCENT / 100);
+
+      calculatorLines.push({
+        wasteType,
+        binSize: LITRE_BASED_WASTE_TYPES.has(wasteType) ? `${quantity}L` : (binSize || '(any size)'),
+        quantity,
+        frequencyPerYear,
+        unitPrice,
+        priceLabel,
+        marginPercent,
+        annualRevenue,
+        repEarning,
+      });
+
+      renderCalculatorLines();
+    }
+
+    function removeCalculatorLine(index) {
+      calculatorLines.splice(index, 1);
+      renderCalculatorLines();
+    }
+
+    function renderCalculatorLines() {
+      const table = document.getElementById('calc-lines-table');
+      const body = document.getElementById('calc-lines-body');
+      const totalEl = document.getElementById('calc-total');
+      const earningTotalEl = document.getElementById('calc-earning-total');
+
+      if (calculatorLines.length === 0) {
+        table.style.display = 'none';
+        totalEl.textContent = 'Estimated annual revenue: $0';
+        earningTotalEl.textContent = 'Rep earning potential*: $0';
+        return;
+      }
+
+      table.style.display = '';
+      body.innerHTML = calculatorLines.map((line, i) => `
+        <tr>
+          <td>${line.wasteType}</td>
+          <td>${line.binSize}</td>
+          <td class="num">${line.quantity}</td>
+          <td class="num">${line.frequencyPerYear}</td>
+          <td class="num">${line.priceLabel}</td>
+          <td class="num">${line.marginPercent}%</td>
+          <td class="num">${money(line.annualRevenue)}</td>
+          <td class="num">${money(line.repEarning)}</td>
+          <td><button onclick="removeCalculatorLine(${i})" style="padding:2px 8px; font-size:0.75rem;">Remove</button></td>
+        </tr>`).join('');
+
+      const totalRevenue = calculatorLines.reduce((sum, l) => sum + l.annualRevenue, 0);
+      const totalEarning = calculatorLines.reduce((sum, l) => sum + l.repEarning, 0);
+      totalEl.textContent = `Estimated annual revenue: ${money(totalRevenue)}`;
+      earningTotalEl.textContent = `Rep earning potential*: ${money(totalEarning)}`;
+    }
+
+    // v1.25: multiple waste-type lines per quote request. The real
+    // agent endpoint only accepts one waste_type per call (confirmed
+    // in its own documentation) — so a rep builds up several lines
+    // here (General Waste + Cardboard + Grease Trap, say), and
+    // submitting sends one request per line, all sharing the same
+    // site/client details, rather than one combined call.
+    let quoteReqLines = [];
+
+    function addQuoteReqLine() {
+      const wasteType = document.getElementById('qr-waste-type').value;
+      const container = document.getElementById('qr-container').value.trim();
+      const containerQty = document.getElementById('qr-container-qty').value.trim();
+      const frequency = document.getElementById('qr-frequency').value.trim();
+
+      quoteReqLines.push({ wasteType, container, containerQty, frequency });
+      document.getElementById('qr-container').value = '';
+      document.getElementById('qr-container-qty').value = '';
+      document.getElementById('qr-frequency').value = '';
+      renderQuoteReqLines();
+    }
+
+    function removeQuoteReqLine(index) {
+      quoteReqLines.splice(index, 1);
+      renderQuoteReqLines();
+    }
+
+    function renderQuoteReqLines() {
+      const table = document.getElementById('qr-lines-table');
+      const body = document.getElementById('qr-lines-body');
+      const status = document.getElementById('qr-lines-status');
+
+      if (quoteReqLines.length === 0) {
+        table.style.display = 'none';
+        status.textContent = 'No lines added yet — add at least one waste type below.';
+        return;
+      }
+
+      table.style.display = '';
+      status.textContent = `${quoteReqLines.length} line${quoteReqLines.length === 1 ? '' : 's'} ready to send.`;
+      body.innerHTML = quoteReqLines.map((line, i) => `
+        <tr>
+          <td>${line.wasteType}</td>
+          <td>${line.container || '—'}</td>
+          <td class="num">${line.containerQty || '—'}</td>
+          <td>${line.frequency || '—'}</td>
+          <td><button onclick="removeQuoteReqLine(${i})" style="padding:2px 8px; font-size:0.75rem;">Remove</button></td>
+        </tr>`).join('');
+    }
+
+    function onQuoteReqModeChange() {
+      const isFreeform = document.getElementById('quote-req-mode').value === 'freeform';
+      document.getElementById('quote-req-structured').style.display = isFreeform ? 'none' : '';
+      document.getElementById('quote-req-freeform').style.display = isFreeform ? '' : 'none';
+    }
+
+    async function submitQuoteRequest() {
+      const mode = document.getElementById('quote-req-mode').value;
+      const status = document.getElementById('qr-status');
+      const btn = document.getElementById('qr-submit-btn');
+
+      if (mode === 'freeform') {
+        const freeformText = document.getElementById('qr-freeform-text').value.trim();
+        if (!freeformText) {
+          status.innerHTML = '<span style="color:var(--error)">Describe the job first.</span>';
+          return;
+        }
+        const body = { freeform_text: freeformText };
+        const clientName = document.getElementById('qr-freeform-client-name').value.trim();
+        if (clientName) body.client_name = clientName;
+
+        btn.disabled = true;
+        btn.textContent = 'Sending…';
+        status.innerHTML = '';
+        try {
+          const result = await sendOneQuoteRequest(body);
+          status.innerHTML = formatQuoteRequestResult(result);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Send request';
+        }
+        return;
+      }
+
+      // Structured mode — one call per line, sharing the same
+      // site/client fields across all of them.
+      if (quoteReqLines.length === 0) {
+        status.innerHTML = '<span style="color:var(--error)">Add at least one line first.</span>';
+        return;
+      }
+      const suburb = document.getElementById('qr-suburb').value.trim();
+      if (!suburb) {
+        status.innerHTML = '<span style="color:var(--error)">Suburb is required.</span>';
+        return;
+      }
+
+      const commonFields = {};
+      const state = document.getElementById('qr-state').value.trim();
+      if (state) commonFields.state = state;
+      const clientName = document.getElementById('qr-client-name').value.trim();
+      if (clientName) commonFields.client_name = clientName;
+      const clientEmail = document.getElementById('qr-client-email').value.trim();
+      if (clientEmail) commonFields.client_contact_email = clientEmail;
+      const margin = document.getElementById('qr-margin').value.trim();
+      if (margin) commonFields.margin_instruction = margin;
+      const spContact = document.getElementById('qr-sp-contact').value.trim();
+      if (spContact) commonFields.named_sp_contact_first_name = spContact;
+      const spCompany = document.getElementById('qr-sp-company').value.trim();
+      if (spCompany) commonFields.named_sp_company_hint = spCompany;
+
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+      status.innerHTML = 'Sending ' + quoteReqLines.length + ' request' + (quoteReqLines.length === 1 ? '' : 's') + '…';
+
+      const results = [];
+      for (const line of quoteReqLines) {
+        const body = { ...commonFields, suburb, waste_type: line.wasteType };
+        if (line.container) body.container = line.container;
+        if (line.containerQty) body.container_qty = line.containerQty;
+        if (line.frequency) body.frequency = line.frequency;
+        const result = await sendOneQuoteRequest(body);
+        results.push({ wasteType: line.wasteType, result });
+      }
+
+      status.innerHTML = results.map(({ wasteType, result }) =>
+        `<div><strong>${wasteType}:</strong> ${formatQuoteRequestResult(result)}</div>`
+      ).join('');
+
+      btn.disabled = false;
+      btn.textContent = 'Send request';
+
+      // Clear the lines once sent, so the form is ready for a fresh
+      // request rather than accidentally resending the same ones.
+      quoteReqLines = [];
+      renderQuoteReqLines();
+    }
+
+    async function sendOneQuoteRequest(body) {
+      try {
+        const res = await fetch('/api/submit-quote-request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        return await res.json();
+      } catch (err) {
+        console.error('sendOneQuoteRequest failed:', err);
+        return { status: 'error', error: 'Request failed — network or server error.' };
+      }
+    }
+
+    function formatQuoteRequestResult(data) {
+      if (data.status === 'ok') {
+        const ticketId = data.rfp_send_result?.hubspot_ticket_id;
+        return `<span style="color:var(--ok)">RFP sent${ticketId ? ` (ticket ${ticketId})` : ''}.</span>`;
+      } else if (data.status === 'needs_clarification') {
+        return `<span style="color:var(--unknown)">${data.error || data.message || 'Could not confidently match the named contact.'}</span>`;
+      }
+      return `<span style="color:var(--error)">${data.error || 'Something went wrong.'}</span>`;
+    }
+
+    async function loadMarketOpportunity() {
+      const grid = document.getElementById('market-opportunity-grid');
+      const note = document.getElementById('market-opportunity-note');
+      try {
+        const res = await fetch('/api/market-opportunity');
+        const data = await res.json();
+
+        if (data.status !== 'ok') {
+          grid.children[0].innerHTML = '<p class="label">Aged Care — rep earning potential</p><p class="value">—</p><p class="sub">Could not load</p>';
+          grid.children[1].innerHTML = '<p class="label">Retirement Villages — rep earning potential</p><p class="value">—</p><p class="sub">Could not load</p>';
+          return;
+        }
+
+        const ac = data.agedCare;
+        const rv = data.retirementVillages;
+
+        grid.children[0].innerHTML = `
+          <p class="label">Aged Care — rep earning potential</p>
+          <p class="value">${money(ac.repRealistic)}</p>
+          <p class="sub">${ac.companyCount} sites, ${ac.totalBeds.toLocaleString()} beds @ ${money(ac.ratePerBedPerYear)}/bed — at ${data.assumptions.winRatePercent}% win rate</p>`;
+
+        grid.children[1].innerHTML = `
+          <p class="label">Retirement Villages — rep earning potential</p>
+          <p class="value">${money(rv.repRealistic)}</p>
+          <p class="sub">${rv.companyCount} sites, ${rv.totalUnits.toLocaleString()} units @ ${money(rv.ratePerUnitPerYear)}/unit — at ${data.assumptions.winRatePercent}% win rate</p>`;
+
+        note.textContent = `${data.note} Figures use real historical rates and a ${data.assumptions.marginPercent}% margin, ${data.assumptions.repShareOfGrossProfitPercent}% rep share of gross profit, and a ${data.assumptions.winRatePercent}% win rate — genuinely conservative, since the Aged Care rate is several years old and excludes streams like Grease Trap.`;
+      } catch (err) {
+        console.error('loadMarketOpportunity failed:', err);
+      }
+    }
+
+    // v1.20: lightweight rep-view mini dashboard — own revenue, own
+    // margin, and quotes, all scoped server-side by my-sales.js to
+    // the logged-in rep's own HubSpot-owned client companies.
+    function setRepVitalCard(index, label, value, sub, flagClass) {
+      const grid = document.getElementById('rep-vital-signs-grid');
+      const card = grid.children[index];
+      // v1.23: index 0 (My Revenue) and index 1 (My Blended Margin)
+      // always keep their own fluorescent colours (yellow, red),
+      // John's explicit request — same "category, not alarm" pattern
+      // already used for the amber Invoices card and green Quotations
+      // card, rather than conditionally switching to a "flagged"
+      // style. Index 2 (Quotes) stays green as before.
+      if (index === 0) {
+        card.className = 'vital-card invoice-vital';
+      } else if (index === 1) {
+        card.className = 'vital-card margin-vital';
+      } else if (index === 2) {
+        card.className = 'vital-card quote-vital';
+      } else {
+        card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
+      }
+      card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
+    }
+
+    async function loadMySales() {
+      const requestPeriod = selectedPeriod;
+      try {
+        const [salesRes, quotesRes] = await Promise.all([
+          fetch('/api/my-sales?period=' + requestPeriod).then(r => r.json()),
+          fetch('/api/quotes-pending').then(r => r.json()),
+        ]);
+
+        if (requestPeriod !== selectedPeriod) return;
+
+        if (salesRes.status === 'ok') {
+          setRepVitalCard(0, `My revenue, ${salesRes.periodLabel}`, money(salesRes.totalRevenue), `${salesRes.clientCount} client${salesRes.clientCount === 1 ? '' : 's'}`);
+          const belowTarget = salesRes.blendedMarginPercent !== null && salesRes.blendedMarginPercent < salesRes.marginTargetPercent;
+          const marginSub = (belowTarget ? `below ${salesRes.marginTargetPercent}% target` : `target ${salesRes.marginTargetPercent}%`) + ` · ${salesRes.periodLabel}`;
+          setRepVitalCard(1, 'My blended margin', salesRes.blendedMarginPercent !== null ? salesRes.blendedMarginPercent.toFixed(1) + '%' : '—',
+            marginSub, belowTarget ? 'flagged' : null);
+        } else {
+          setRepVitalCard(0, 'My revenue', '—', 'Could not load');
+          setRepVitalCard(1, 'My blended margin', '—', 'Could not load');
+        }
+
+        if (quotesRes.status === 'ok') {
+          const count = quotesRes.quotes.length;
+          setRepVitalCard(2, 'Quotes awaiting approval', count, count > 0 ? 'Click to review' : 'All caught up');
+        } else {
+          setRepVitalCard(2, 'Quotes awaiting approval', '—', 'Could not load');
+        }
+
+        const table = document.getElementById('my-clients-table');
+        if (salesRes.status === 'ok' && salesRes.clients.length > 0) {
+          table.innerHTML = `
+            <thead><tr><th>Client</th><th>Revenue</th><th>Cost</th><th>Margin</th></tr></thead>
+            <tbody>${salesRes.clients.map(c => `
+              <tr class="${c.belowTarget ? 'risk' : ''}">
+                <td>${c.name}</td>
+                <td class="num">${money(c.revenue)}</td>
+                <td class="num">${money(c.cost)}</td>
+                <td class="num">${c.marginPercent !== null ? c.marginPercent + '%' : '—'}</td>
+              </tr>`).join('')}</tbody>`;
+        } else if (salesRes.status === 'ok') {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No passed invoices this period yet.</td></tr></tbody>';
+        } else {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
+        }
+      } catch (err) {
+        console.error('loadMySales failed:', err);
+      }
+    }
+
+    async function loadStatus() {
+      const grid = document.getElementById('agent-grid');
+      const lastChecked = document.getElementById('last-checked');
+      lastChecked.textContent = 'Checking...';
+
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        grid.innerHTML = data.agents.map(agent => {
+          const statusClass = agent.status;
+          const versionRow = agent.version
+            ? `<div class="row"><span>Version</span><span>${agent.version}</span></div>`
+            : '';
+          const detailRow = agent.detail
+            ? `<div class="row"><span>Detail</span><span>${agent.detail}</span></div>`
+            : '';
+          const responseRow = agent.responseMs !== undefined
+            ? `<div class="row"><span>Response time</span><span>${agent.responseMs}ms</span></div>`
+            : '';
+          const manualNoteBlock = agent.manualNote
+            ? `<div class="manual-note">⚠ ${agent.manualNote}</div>`
+            : '';
+
+          return `
+            <div class="card">
+              <div class="card-top">
+                <h2>${agent.name}</h2>
+                <div class="dot ${statusClass}"></div>
+              </div>
+              <div class="row">
+                <span>Status</span>
+                <span class="status-label ${statusClass}">${agent.status}</span>
+              </div>
+              ${versionRow}
+              ${detailRow}
+              ${responseRow}
+              ${manualNoteBlock}
+            </div>
+          `;
+        }).join('');
+
+        const checkedTime = new Date(data.checkedAt).toLocaleTimeString();
+        lastChecked.textContent = `Last checked: ${checkedTime}`;
+      } catch (err) {
+        grid.innerHTML = `<div class="card"><div class="card-top"><h2>Could not reach status checker</h2><div class="dot error"></div></div></div>`;
+        lastChecked.textContent = 'Refresh failed — try again';
+      }
+    }
+
+    function timeAgo(isoString) {
+      if (!isoString) return '';
+      const diffMs = Date.now() - new Date(isoString).getTime();
+      const mins = Math.floor(diffMs / 60000);
+      if (mins < 60) return `${mins}m ago`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h ago`;
+      return `${Math.floor(hours / 24)}d ago`;
+    }
+
+    function renderExceptionItem(t) {
+      const button = t.kind === 'invoice_review'
+        ? `<button class="approve-btn" id="approve-btn-${t.id}" onclick="approveInvoice('${t.id}', this)">Confirm &amp; Create Xero Draft</button>`
+        : '';
+      return `
+        <div class="exception-item" id="exception-item-${t.id}">
+          <a class="subject-link" href="${t.url}" target="_blank" rel="noopener">${t.subject}</a>
+          <div class="right-side">
+            <span class="meta">${timeAgo(t.createdAt)}</span>
+            ${button}
+          </div>
+        </div>
+      `;
+    }
+
+    async function approveInvoice(invoiceId, btn) {
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Confirming…';
+      btn.classList.remove('approve-btn-error', 'approve-btn-success');
+
+      try {
+        const res = await fetch('/api/approve-invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoiceId }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || data.status !== 'ok') {
+          throw new Error(data.error || 'Confirm failed — see Vercel logs for details');
+        }
+
+        btn.textContent = `Xero draft ${data.xeroInvoiceId ? 'created' : 'confirmed'} ✓`;
+        btn.classList.add('approve-btn-success');
+        setTimeout(loadExceptions, 2500);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Failed — retry';
+        btn.classList.add('approve-btn-error');
+        console.error('approveInvoice failed:', err);
+      }
+    }
+
+    async function loadExceptions() {
+      const list = document.getElementById('exceptions-list');
+      const heading = document.getElementById('exceptions-heading');
+      try {
+        const res = await fetch('/api/exceptions');
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data.error || 'Failed to load');
+
+        heading.textContent = `Exceptions & Alerts (${data.openCount} open)`;
+
+        if (data.tickets.length === 0) {
+          list.innerHTML = '<div class="exceptions-empty">No open tickets — nothing needs attention right now.</div>';
+          return;
+        }
+
+        list.innerHTML = data.tickets.map(renderExceptionItem).join('');
+      } catch (err) {
+        list.innerHTML = '<div class="exceptions-empty">Could not load open tickets. Refresh to try again.</div>';
+      }
+    }
+
+    // v1.17: period selector state — only Revenue/Blended Margin (and
+    // their two drill-downs) respond to this on the admin view; on
+    // the rep view (v1.20) it drives My Revenue/My Blended Margin the
+    // same way. Two separate <select> elements (admin's and the
+    // rep's) share this one variable and handler — only one is ever
+    // visible at a time, so there's no conflict.
+    // v1.38: Payables follows this selector too, being built from the
+    // same margin-by-client response as Blended margin.
+    let selectedPeriod = 'month';
+    function onPeriodChange(value) {
+      selectedPeriod = value;
+      if (isAdminGlobal) {
+        loadVitalSigns();
+        // v1.39: the supplier drill-down follows the period too (it
+        // only actually does anything if it is currently open).
+        supplierPayablesLoadedFor = null;
+        loadPayablesBySupplier(false);
+      } else {
+        loadMySales();
+      }
+    }
+
+    // v1.8: Business Vital Signs
+    // v1.39: HTML-escape anything shown from HubSpot data that this page
+    // did not write itself (supplier names come straight off invoices).
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function money(n) {
+      return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(n || 0);
+    }
+
+    function setVitalCard(index, label, value, sub, flagClass) {
+      const grid = document.getElementById('vital-signs-grid');
+      const card = grid.children[index];
+      // v1.11: the "Invoices awaiting approval" card always keeps its
+      // own styling regardless of flagClass — it's meant to read as a
+      // category, not just an alarm when something's overdue. v1.14:
+      // switched from shared amber "warning" to its own fluorescent
+      // yellow (invoice-vital), matching the green Quotations card's
+      // glow treatment.
+      // v1.13: same pattern for "Quotes awaiting approval", which
+      // always stays green. Both are anchor/div elements handled the
+      // same way here — only className/innerHTML are touched, never
+      // the element itself, so the quote card's href survives.
+      // v1.38: the new Payables card was inserted at position 1, so
+      // these two moved along one place: Invoices awaiting approval
+      // is now index 6 (was 5) and Quotes awaiting approval is now
+      // index 7 (was 6).
+      const isAwaitingApprovalCard = index === 6;
+      const isQuoteCard = index === 7;
+      if (isQuoteCard) {
+        card.className = 'vital-card quote-vital';
+      } else if (isAwaitingApprovalCard) {
+        card.className = 'vital-card invoice-vital';
+      } else {
+        card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
+      }
+      card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
+    }
+
+    async function loadVitalSigns() {
+      // v1.17 FIX: real race condition — switching the dropdown fires
+      // a new fetch, but a slower EARLIER request could still resolve
+      // AFTER a newer one and overwrite it. Capture which period this
+      // specific call was fetching for, and bail before touching the
+      // DOM if the user has since switched to a different period —
+      // only the most recent selection is ever allowed to render.
+      const requestPeriod = selectedPeriod;
+      try {
+        const [marginRes, revenueRes, agingRes, payablesRes, awaitingRes, quotesRes] = await Promise.all([
+          fetch('/api/margin-by-client?period=' + requestPeriod).then(r => r.json()),
+          fetch('/api/revenue-by-client?period=' + requestPeriod).then(r => r.json()),
+          fetch('/api/ar-aging').then(r => r.json()),
+          fetch('/api/ap-aging').then(r => r.json()),
+          fetch('/api/awaiting-approval').then(r => r.json()),
+          fetch('/api/quotes-pending').then(r => r.json()),
+        ]);
+
+        if (requestPeriod !== selectedPeriod) {
+          // A newer request has since started (or is about to render)
+          // for a different period — this response is stale, discard
+          // it rather than let it overwrite the current selection.
+          return;
+        }
+
+        if (revenueRes.status === 'ok') {
+          setVitalCard(0, `Revenue, ${revenueRes.periodLabel}`, money(revenueRes.totalRevenue), `${revenueRes.clientCount} client${revenueRes.clientCount === 1 ? '' : 's'}`);
+        } else {
+          setVitalCard(0, 'Revenue', '—', 'Could not load');
+        }
+
+        // v1.38: NEW — Payables, directly beside Revenue. It is the
+        // supplier cost on the very same passed invoices, taken from
+        // the "cost" figure margin-by-client.js already returns for
+        // each client (the number Blended margin is built from), so
+        // Revenue minus Payables always agrees with the margin card.
+        // This is what suppliers billed us through HubSpot in the
+        // period, paid or not — NOT the unpaid balance, which is the
+        // Xero-based "Largest supplier (payables)" card further along.
+        // The sub-line shows how much of the revenue actually has a
+        // supplier cost recorded against it (the same
+        // costDataCoveragePercent the Margin table shows per client,
+        // revenue-weighted), and the card turns amber below 90% so a
+        // low Payables figure caused by missing cost data can't be
+        // mistaken for a genuinely low one.
+        if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
+          const totalPayables = marginRes.clients.reduce((s, c) => s + (c.cost || 0), 0);
+          const totalRevenueForCoverage = marginRes.clients.reduce((s, c) => s + (c.revenue || 0), 0);
+          const costedRevenue = marginRes.clients.reduce((s, c) => s + (c.revenue || 0) * ((c.costDataCoveragePercent == null ? 100 : c.costDataCoveragePercent) / 100), 0);
+          const coveragePercent = totalRevenueForCoverage > 0 ? Math.round((costedRevenue / totalRevenueForCoverage) * 100) : 100;
+          const payablesSub = `supplier invoices via HubSpot · ${marginRes.periodLabel}`
+            + (coveragePercent < 100 ? ` · cost recorded on ${coveragePercent}% of revenue` : '');
+          setVitalCard(1, `Payables, ${marginRes.periodLabel}`, money(totalPayables), payablesSub,
+            coveragePercent < 90 ? 'warning' : null);
+          lastPayablesCardTotal = totalPayables;   // v1.39: the drill-down below checks itself against this
+        } else if (marginRes.status === 'ok') {
+          setVitalCard(1, 'Payables', '—', 'No data this period');
+          lastPayablesCardTotal = 0;
+        } else {
+          setVitalCard(1, 'Payables', '—', 'Could not load');
+          lastPayablesCardTotal = null;
+        }
+
+        if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
+          const totalRev = marginRes.clients.reduce((s, c) => s + c.revenue, 0);
+          const totalCost = marginRes.clients.reduce((s, c) => s + c.cost, 0);
+          const blendedMargin = totalRev > 0 ? ((totalRev - totalCost) / totalRev) * 100 : null;
+          const belowTarget = blendedMargin !== null && blendedMargin < marginRes.marginTargetPercent;
+          const marginSub = (belowTarget ? `below ${marginRes.marginTargetPercent}% target` : `target ${marginRes.marginTargetPercent}%`) + ` · ${marginRes.periodLabel}`;
+          setVitalCard(2, 'Blended margin', blendedMargin !== null ? blendedMargin.toFixed(1) + '%' : '—',
+            marginSub,
+            belowTarget ? 'flagged' : null);
+        } else {
+          setVitalCard(2, 'Blended margin', '—', 'No data this period');
+        }
+
+        if (agingRes.status === 'ok') {
+          const overdue = (agingRes.buckets.overdue_31_60 || 0) + (agingRes.buckets.overdue_61_90 || 0) + (agingRes.buckets.overdue_90_plus || 0);
+          const overduePercent = agingRes.totalOutstanding > 0 ? Math.round((overdue / agingRes.totalOutstanding) * 100) : 0;
+          setVitalCard(3, 'Overdue receivables', money(overdue), `${overduePercent}% of ${money(agingRes.totalOutstanding)} total`,
+            overduePercent > 20 ? 'warning' : null);
+        } else {
+          setVitalCard(3, 'Overdue receivables', '—', 'Could not load');
+        }
+
+        if (revenueRes.status === 'ok' && revenueRes.clients.length > 0) {
+          const top = revenueRes.clients[0];
+          setVitalCard(4, 'Largest client', top.percentOfTotal + '%', `${top.name} of total revenue`,
+            top.concentrationRisk ? 'warning' : null);
+        } else {
+          setVitalCard(4, 'Largest client', '—', 'No data this period');
+        }
+
+        if (payablesRes.status === 'ok' && payablesRes.suppliers.length > 0) {
+          const topSupplier = payablesRes.suppliers[0];
+          setVitalCard(5, 'Largest supplier (payables)', money(topSupplier.amountOwing), `${topSupplier.name} — ${topSupplier.percentOfTotalPayables}% of payables`,
+            topSupplier.concentrationNote ? 'warning' : null);
+        } else {
+          setVitalCard(5, 'Largest supplier (payables)', '—', 'Could not load');
+        }
+
+        if (awaitingRes.status === 'ok') {
+          const stuckNote = awaitingRes.stuckCount > 0
+            ? `${awaitingRes.stuckCount} stuck ${awaitingRes.stuckCount === 1 ? 'invoice' : 'invoices'} (${awaitingRes.stuckThresholdBusinessDays}+ business days)`
+            : `none over ${awaitingRes.stuckThresholdBusinessDays} business days yet`;
+          setVitalCard(6, 'Invoices awaiting approval', awaitingRes.totalCount, stuckNote);
+        } else {
+          setVitalCard(6, 'Invoices awaiting approval', '—', 'Could not load');
+        }
+
+        if (quotesRes.status === 'ok') {
+          const count = quotesRes.quotes.length;
+          setVitalCard(7, 'Quotes awaiting approval', count, count > 0 ? 'Click to review' : 'All caught up');
+        } else {
+          setVitalCard(7, 'Quotes awaiting approval', '—', 'Could not load');
+        }
+
+        const marginTable = document.getElementById('margin-table');
+        if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
+          marginTable.innerHTML = `
+            <thead><tr><th>Client</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Data quality</th></tr></thead>
+            <tbody>${marginRes.clients.map(c => `
+              <tr class="${c.belowTarget ? 'risk' : ''}">
+                <td>${c.name}</td>
+                <td class="num">${money(c.revenue)}</td>
+                <td class="num">${money(c.cost)}</td>
+                <td class="num">${c.marginPercent !== null ? c.marginPercent + '%' : '—'}</td>
+                <td class="num">${c.costDataCoveragePercent}%</td>
+              </tr>`).join('')}</tbody>`;
+        } else {
+          marginTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No passed invoices this period yet.</td></tr></tbody>';
+        }
+
+        const revenueTable = document.getElementById('revenue-table');
+        if (revenueRes.status === 'ok' && revenueRes.clients.length > 0) {
+          const clientRows = revenueRes.clients.map(c => `
+            <tr class="${c.concentrationRisk ? 'risk' : ''}">
+              <td>${c.name}</td><td class="num">${money(c.revenue)}</td><td class="num">${c.percentOfTotal}%</td>
+            </tr>`).join('');
+          const wasteRows = (revenueRes.revenueByWasteType || []).map(w => `
+            <tr><td>${w.wasteType}</td><td class="num">${money(w.revenue)}</td><td class="num">${w.percentOfTotal}%</td></tr>`).join('');
+          revenueTable.innerHTML = `
+            <thead><tr><th>Client</th><th>Revenue</th><th>% of total</th></tr></thead>
+            <tbody>${clientRows}</tbody>
+            <thead><tr><th colspan="3" style="padding-top:16px">By waste type</th></tr></thead>
+            <tbody>${wasteRows}</tbody>`;
+        } else {
+          revenueTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No passed invoices this period yet.</td></tr></tbody>';
+        }
+
+        const agingTable = document.getElementById('aging-table');
+        if (agingRes.status === 'ok' && agingRes.clients.length > 0) {
+          // v1.26: total row at the bottom, using the same
+          // totalOutstanding figure ar-aging.js already calculates
+          // and returns — not re-summed client-side, so it can never
+          // drift from what the card above it shows.
+          agingTable.innerHTML = `
+            <thead><tr><th>Client</th><th>Amount due</th><th>% of receivables</th><th>Oldest (days)</th></tr></thead>
+            <tbody>${agingRes.clients.map(c => `
+              <tr class="${c.concentrationRisk ? 'risk' : ''}">
+                <td>${c.name}</td>
+                <td class="num">${money(c.amountDue)}</td>
+                <td class="num">${c.percentOfTotalReceivables}%</td>
+                <td class="num">${c.oldestDaysOverdue}</td>
+              </tr>`).join('')}
+              <tr class="total-row">
+                <td>Total</td>
+                <td class="num">${money(agingRes.totalOutstanding)}</td>
+                <td class="num">100%</td>
+                <td></td>
+              </tr>
+            </tbody>`;
+        } else {
+          agingTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding receivables found.</td></tr></tbody>';
+        }
+
+        const payablesTable = document.getElementById('payables-table');
+        if (payablesRes.status === 'ok' && payablesRes.suppliers.length > 0) {
+          // v1.26: total row, same pattern as the aging table above —
+          // uses payablesRes.totalOwing (already calculated by
+          // ap-aging.js) rather than re-summing client-side.
+          payablesTable.innerHTML = `
+            <thead><tr><th>Supplier (as recorded in Xero)</th><th>Amount owing</th><th>% of payables</th><th>Oldest (days)</th></tr></thead>
+            <tbody>${payablesRes.suppliers.map(s => `
+              <tr class="${s.concentrationNote ? 'risk' : ''}">
+                <td>${s.name}</td>
+                <td class="num">${money(s.amountOwing)}</td>
+                <td class="num">${s.percentOfTotalPayables}%</td>
+                <td class="num">${s.oldestDaysOverdue}</td>
+              </tr>`).join('')}
+              <tr class="total-row">
+                <td>Total</td>
+                <td class="num">${money(payablesRes.totalOwing)}</td>
+                <td class="num">100%</td>
+                <td></td>
+              </tr>
+            </tbody>`;
+        } else {
+          payablesTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No outstanding payables found.</td></tr></tbody>';
+        }
+
+        const awaitingTable = document.getElementById('awaiting-approval-table');
+        if (awaitingRes.status === 'ok' && awaitingRes.items.length > 0) {
+          awaitingTable.innerHTML = `
+            <thead><tr><th>Invoice</th><th>Client</th><th>Total</th><th>Business days waiting</th></tr></thead>
+            <tbody>${awaitingRes.items.map(i => `
+              <tr class="${i.stuck ? 'risk' : ''}">
+                <td>${i.invoiceNumber || '—'}</td>
+                <td>${i.client}</td>
+                <td class="num">${money(i.total)}</td>
+                <td class="num">${i.businessDaysWaiting}</td>
+              </tr>`).join('')}</tbody>`;
+        } else {
+          awaitingTable.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Nothing sitting in Draft right now.</td></tr></tbody>';
+        }
+
+        // v1.39: if the supplier drill-down is open, refresh it with
+        // everything else (does nothing when it is closed).
+        loadPayablesBySupplier(true);
+
+      } catch (err) {
+        console.error('loadVitalSigns failed:', err);
+      }
+    }
+
+    // v1.39: NEW — "Payables by supplier (HubSpot)" drill-down. Only
+    // fetched while the <details> is OPEN: it makes the same heavy
+    // per-invoice HubSpot calls as the margin and revenue endpoints,
+    // and the page already fires several of those at once on load
+    // (see v1.29). Follows the period dropdown; a response that
+    // arrives after the person has switched period is discarded, the
+    // same stale-response guard loadVitalSigns uses.
+    let supplierPayablesLoadedFor = null;   // the period the table on screen was loaded for
+    let lastPayablesCardTotal = null;       // the Payables card's own total, for the cross-check
+
+    function onSupplierPayablesToggle(el) {
+      if (el.open) loadPayablesBySupplier(false);
+    }
+
+    async function loadPayablesBySupplier(force) {
+      const details = document.getElementById('supplier-payables-details');
+      if (!details || !details.open) return;
+      const requestPeriod = selectedPeriod;
+      if (!force && supplierPayablesLoadedFor === requestPeriod) return;
+
+      const table = document.getElementById('supplier-payables-table');
+      const note = document.getElementById('supplier-payables-note');
+      if (supplierPayablesLoadedFor !== requestPeriod) {
+        table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody>';
+        note.textContent = '';
+      }
+
+      try {
+        const res = await fetch('/api/payables-by-supplier?period=' + requestPeriod);
+        const data = await res.json();
+        if (requestPeriod !== selectedPeriod) return;   // stale — a different period has been chosen since
+
+        if (data.status !== 'ok') {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
+          note.textContent = '';
+          supplierPayablesLoadedFor = null;
+          return;
+        }
+        supplierPayablesLoadedFor = requestPeriod;
+
+        if (data.suppliers.length === 0) {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">No passed invoices this period yet.</td></tr></tbody>';
+          note.textContent = '';
+          return;
+        }
+
+        const blended = data.totalRevenue > 0 ? (((data.totalRevenue - data.totalPayables) / data.totalRevenue) * 100).toFixed(1) + '%' : '—';
+        table.innerHTML = `
+          <thead><tr><th>Supplier</th><th>Payables</th><th>% of payables</th><th>Revenue billed</th><th>Margin</th><th>Invoices</th></tr></thead>
+          <tbody>${data.suppliers.map(s => `
+            <tr class="${s.isUnknown ? 'risk' : ''}">
+              <td>${esc(s.name)}</td>
+              <td class="num">${money(s.payables)}</td>
+              <td class="num">${s.percentOfTotal}%</td>
+              <td class="num">${money(s.revenue)}</td>
+              <td class="num">${s.marginPercent !== null ? s.marginPercent + '%' : '—'}</td>
+              <td class="num">${s.invoiceCount}</td>
+            </tr>`).join('')}
+            <tr class="total-row">
+              <td>Total</td>
+              <td class="num">${money(data.totalPayables)}</td>
+              <td class="num">100%</td>
+              <td class="num">${money(data.totalRevenue)}</td>
+              <td class="num">${blended}</td>
+              <td class="num">${data.invoiceCount}</td>
+            </tr>
+          </tbody>`;
+
+        const notes = [];
+        if (lastPayablesCardTotal !== null) {
+          const diff = Math.abs(data.totalPayables - lastPayablesCardTotal);
+          notes.push(diff <= 1
+            ? 'Total matches the Payables card.'
+            : `⚠ Total differs from the Payables card by ${money(diff)} — the two read the same invoices, so they should agree. Worth a look.`);
+        }
+        if (data.costDataCoveragePercent < 100) {
+          notes.push(`Supplier cost is recorded on ${data.costDataCoveragePercent}% of the revenue, so these figures can understate what was billed.`);
+        }
+        const unknown = data.suppliers.find(s => s.isUnknown);
+        if (unknown) {
+          notes.push(`${unknown.invoiceCount} invoice${unknown.invoiceCount === 1 ? ' has' : 's have'} no supplier saved on the record (older invoices) and ${unknown.invoiceCount === 1 ? 'is' : 'are'} listed as "Unknown supplier".`);
+        }
+        note.textContent = notes.join(' ');
+      } catch (err) {
+        console.error('loadPayablesBySupplier failed:', err);
+        if (requestPeriod === selectedPeriod) {
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
+          supplierPayablesLoadedFor = null;
+        }
+      }
+    }
+  </script>
+</body>
+</html><!DOCTYPE html>
+<!-- FWS Command Center — index.html
      v1.38 — 8 Oct 2026
      v1.38: NEW — a "Payables" card sits directly beside Revenue on the
        admin Business Vital Signs, per John and James's request: the
