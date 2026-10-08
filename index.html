@@ -1,5 +1,18 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.41 — 8 Oct 2026
+     v1.41: NEW — Agent Health, three changes, with api/status.js v1.6:
+       (1) a Time Saver card (it was the one agent with a real health
+       check and no card); (2) an AMBER "warning" state for a card
+       (dot, label and detail line), used first by Agent 1, which now
+       turns amber when invoice emails are waiting longer than its
+       30-minute sweep should allow or have given up after repeated
+       failures, while red still means "not watching the mailbox at
+       all"; (3) a long detail line (Agent 1's is now two sentences)
+       is shown as a readable block under the card's rows, tinted amber
+       or red to match, instead of being squeezed into the right-hand
+       column. Short details look exactly as before. Nothing else on
+       this page changed.
      v1.40 — 8 Oct 2026
      v1.40: NEW — a "Quotes awaiting approval" drill-down, on both the
        admin view (under "Invoices awaiting approval") and the rep view
@@ -408,6 +421,7 @@
     .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
     .dot.error, .dot.unreachable { background: var(--error); box-shadow: 0 0 8px var(--error); }
     .dot.unknown, .dot.loading { background: var(--unknown); }
+    .dot.warning { background: var(--unknown); box-shadow: 0 0 8px var(--unknown); }   /* v1.41: amber, still working but needs a look */
     .row {
       display: flex;
       justify-content: space-between;
@@ -419,6 +433,15 @@
       color: var(--text);
       text-align: right;
     }
+    /* v1.41: a long detail line gets its own readable block under the rows */
+    .detail-block {
+      font-size: 0.8rem;
+      line-height: 1.45;
+      color: var(--muted);
+      padding: 6px 0 2px;
+    }
+    .detail-block.detail-warning { color: var(--unknown); }
+    .detail-block.detail-error, .detail-block.detail-unreachable { color: var(--error); }
     .status-label {
       font-size: 0.75rem;
       text-transform: uppercase;
@@ -430,6 +453,7 @@
     .status-label.ok { background: rgba(34,197,94,0.15); color: var(--ok); }
     .status-label.error, .status-label.unreachable { background: rgba(239,68,68,0.15); color: var(--error); }
     .status-label.unknown, .status-label.loading { background: rgba(245,158,11,0.15); color: var(--unknown); }
+    .status-label.warning { background: rgba(245,158,11,0.15); color: var(--unknown); }   /* v1.41 */
     .manual-note {
       margin-top: 12px;
       padding: 8px 10px;
@@ -2052,8 +2076,12 @@
           const versionRow = agent.version
             ? `<div class="row"><span>Version</span><span>${agent.version}</span></div>`
             : '';
+          // v1.41: a long detail (Agent 1's is two sentences) is a block under the
+          // rows, tinted to match the status; short ones stay as a Detail row.
           const detailRow = agent.detail
-            ? `<div class="row"><span>Detail</span><span>${agent.detail}</span></div>`
+            ? (agent.detail.length > 60
+                ? `<div class="detail-block ${['warning', 'error', 'unreachable'].includes(statusClass) ? 'detail-' + statusClass : ''}">${esc(agent.detail)}</div>`
+                : `<div class="row"><span>Detail</span><span>${agent.detail}</span></div>`)
             : '';
           const responseRow = agent.responseMs !== undefined
             ? `<div class="row"><span>Response time</span><span>${agent.responseMs}ms</span></div>`
