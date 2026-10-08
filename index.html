@@ -1,5 +1,27 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.38 — 8 Oct 2026
+     v1.38: NEW — a "Payables" card sits directly beside Revenue on the
+       admin Business Vital Signs, per John and James's request: the
+       supplier cost of the invoices that came through HubSpot, for
+       the same period the Revenue card is showing (this month / year
+       to date / financial year to date). No new backend: it is the
+       sum of the "cost" column api/margin-by-client.js already
+       returns (the very figure Blended Margin is built from), so
+       Revenue minus Payables always agrees with the margin card. The
+       sub-line shows how much of the revenue actually has a supplier
+       cost recorded against it, and the card turns amber when that
+       falls below 90%, so a low Payables figure caused by missing
+       cost data can't be mistaken for a genuinely low one. NOT the
+       same as the existing "Largest supplier (payables)" card, which
+       is what is still unpaid in Xero — this one is what suppliers
+       billed us through HubSpot in the period, paid or not. Because
+       the new card goes second, every card after it moves along one
+       position; the position-based references in setVitalCard() and
+       loadVitalSigns() were all updated together (Blended margin 2,
+       Overdue receivables 3, Largest client 4, Largest supplier 5,
+       Invoices awaiting approval 6, Quotes awaiting approval 7).
+       Nothing else on this page changed.
      v1.37 — 1 Oct 2026
      v1.37: NEW — the quick commission estimate now also shows a
        Monthly commission figure alongside Annual (annual ÷ 12), per
@@ -824,8 +846,16 @@
         <option value="fy">Financial year to date</option>
       </select>
     </div>
+    <!-- v1.38: Payables sits second, directly beside Revenue. The
+         card positions below are referenced by NUMBER in
+         setVitalCard() / loadVitalSigns() — 0 Revenue, 1 Payables,
+         2 Blended margin, 3 Overdue receivables, 4 Largest client,
+         5 Largest supplier (payables, from Xero), 6 Invoices awaiting
+         approval, 7 Quotes awaiting approval. If a card is ever added
+         or moved again, those numbers must change with it. -->
     <div class="vital-signs-grid" id="vital-signs-grid">
       <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Payables, this month</p><p class="value">…</p></div>
       <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
       <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
       <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
@@ -898,7 +928,7 @@
       <table id="awaiting-approval-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
     </details>
 
-    <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. Receivables, payables, and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
+    <div class="vital-signs-note">Margin &amp; revenue figures are calculated entirely from HubSpot invoice data. The Payables card (next to Revenue) is the supplier cost on those same passed invoices, so Revenue minus Payables agrees with Blended margin — it is what suppliers billed us through HubSpot in the period, paid or not, and it turns amber if less than 90% of the revenue has a supplier cost recorded against it. Receivables, "Largest supplier (payables)", and awaiting-approval figures are read from Xero via fws-xero-reader. Supplier names in the payables drill-down are shown exactly as recorded in Xero, not consolidated — a supplier split across multiple Xero contacts (e.g. Remondis) will appear as separate rows for now. "Awaiting approval" uses the same 3-business-day stuck threshold as clv-invoice-automation's daily Xero draft-aging alert, so this card and that alert will always agree on what counts as stuck.</div>
   </div>
 
   <!-- v1.20: rep-view — a real scoped mini dashboard (own revenue,
@@ -2083,6 +2113,8 @@
     // same way. Two separate <select> elements (admin's and the
     // rep's) share this one variable and handler — only one is ever
     // visible at a time, so there's no conflict.
+    // v1.38: Payables follows this selector too, being built from the
+    // same margin-by-client response as Blended margin.
     let selectedPeriod = 'month';
     function onPeriodChange(value) {
       selectedPeriod = value;
@@ -2101,18 +2133,22 @@
     function setVitalCard(index, label, value, sub, flagClass) {
       const grid = document.getElementById('vital-signs-grid');
       const card = grid.children[index];
-      // v1.11: the "Invoices awaiting approval" card (index 5) always
-      // keeps its own styling regardless of flagClass — it's meant to
-      // read as a category, not just an alarm when something's
-      // overdue. v1.14: switched from shared amber "warning" to its
-      // own fluorescent yellow (invoice-vital), matching the green
-      // Quotations card's glow treatment.
-      // v1.13: same pattern for "Quotes awaiting approval" (index 6),
-      // which always stays green. Both are anchor/div elements handled
-      // the same way here — only className/innerHTML are touched,
-      // never the element itself, so the quote card's href survives.
-      const isAwaitingApprovalCard = index === 5;
-      const isQuoteCard = index === 6;
+      // v1.11: the "Invoices awaiting approval" card always keeps its
+      // own styling regardless of flagClass — it's meant to read as a
+      // category, not just an alarm when something's overdue. v1.14:
+      // switched from shared amber "warning" to its own fluorescent
+      // yellow (invoice-vital), matching the green Quotations card's
+      // glow treatment.
+      // v1.13: same pattern for "Quotes awaiting approval", which
+      // always stays green. Both are anchor/div elements handled the
+      // same way here — only className/innerHTML are touched, never
+      // the element itself, so the quote card's href survives.
+      // v1.38: the new Payables card was inserted at position 1, so
+      // these two moved along one place: Invoices awaiting approval
+      // is now index 6 (was 5) and Quotes awaiting approval is now
+      // index 7 (was 6).
+      const isAwaitingApprovalCard = index === 6;
+      const isQuoteCard = index === 7;
       if (isQuoteCard) {
         card.className = 'vital-card quote-vital';
       } else if (isAwaitingApprovalCard) {
@@ -2154,58 +2190,87 @@
           setVitalCard(0, 'Revenue', '—', 'Could not load');
         }
 
+        // v1.38: NEW — Payables, directly beside Revenue. It is the
+        // supplier cost on the very same passed invoices, taken from
+        // the "cost" figure margin-by-client.js already returns for
+        // each client (the number Blended margin is built from), so
+        // Revenue minus Payables always agrees with the margin card.
+        // This is what suppliers billed us through HubSpot in the
+        // period, paid or not — NOT the unpaid balance, which is the
+        // Xero-based "Largest supplier (payables)" card further along.
+        // The sub-line shows how much of the revenue actually has a
+        // supplier cost recorded against it (the same
+        // costDataCoveragePercent the Margin table shows per client,
+        // revenue-weighted), and the card turns amber below 90% so a
+        // low Payables figure caused by missing cost data can't be
+        // mistaken for a genuinely low one.
+        if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
+          const totalPayables = marginRes.clients.reduce((s, c) => s + (c.cost || 0), 0);
+          const totalRevenueForCoverage = marginRes.clients.reduce((s, c) => s + (c.revenue || 0), 0);
+          const costedRevenue = marginRes.clients.reduce((s, c) => s + (c.revenue || 0) * ((c.costDataCoveragePercent == null ? 100 : c.costDataCoveragePercent) / 100), 0);
+          const coveragePercent = totalRevenueForCoverage > 0 ? Math.round((costedRevenue / totalRevenueForCoverage) * 100) : 100;
+          const payablesSub = `supplier invoices via HubSpot · ${marginRes.periodLabel}`
+            + (coveragePercent < 100 ? ` · cost recorded on ${coveragePercent}% of revenue` : '');
+          setVitalCard(1, `Payables, ${marginRes.periodLabel}`, money(totalPayables), payablesSub,
+            coveragePercent < 90 ? 'warning' : null);
+        } else if (marginRes.status === 'ok') {
+          setVitalCard(1, 'Payables', '—', 'No data this period');
+        } else {
+          setVitalCard(1, 'Payables', '—', 'Could not load');
+        }
+
         if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
           const totalRev = marginRes.clients.reduce((s, c) => s + c.revenue, 0);
           const totalCost = marginRes.clients.reduce((s, c) => s + c.cost, 0);
           const blendedMargin = totalRev > 0 ? ((totalRev - totalCost) / totalRev) * 100 : null;
           const belowTarget = blendedMargin !== null && blendedMargin < marginRes.marginTargetPercent;
           const marginSub = (belowTarget ? `below ${marginRes.marginTargetPercent}% target` : `target ${marginRes.marginTargetPercent}%`) + ` · ${marginRes.periodLabel}`;
-          setVitalCard(1, 'Blended margin', blendedMargin !== null ? blendedMargin.toFixed(1) + '%' : '—',
+          setVitalCard(2, 'Blended margin', blendedMargin !== null ? blendedMargin.toFixed(1) + '%' : '—',
             marginSub,
             belowTarget ? 'flagged' : null);
         } else {
-          setVitalCard(1, 'Blended margin', '—', 'No data this period');
+          setVitalCard(2, 'Blended margin', '—', 'No data this period');
         }
 
         if (agingRes.status === 'ok') {
           const overdue = (agingRes.buckets.overdue_31_60 || 0) + (agingRes.buckets.overdue_61_90 || 0) + (agingRes.buckets.overdue_90_plus || 0);
           const overduePercent = agingRes.totalOutstanding > 0 ? Math.round((overdue / agingRes.totalOutstanding) * 100) : 0;
-          setVitalCard(2, 'Overdue receivables', money(overdue), `${overduePercent}% of ${money(agingRes.totalOutstanding)} total`,
+          setVitalCard(3, 'Overdue receivables', money(overdue), `${overduePercent}% of ${money(agingRes.totalOutstanding)} total`,
             overduePercent > 20 ? 'warning' : null);
         } else {
-          setVitalCard(2, 'Overdue receivables', '—', 'Could not load');
+          setVitalCard(3, 'Overdue receivables', '—', 'Could not load');
         }
 
         if (revenueRes.status === 'ok' && revenueRes.clients.length > 0) {
           const top = revenueRes.clients[0];
-          setVitalCard(3, 'Largest client', top.percentOfTotal + '%', `${top.name} of total revenue`,
+          setVitalCard(4, 'Largest client', top.percentOfTotal + '%', `${top.name} of total revenue`,
             top.concentrationRisk ? 'warning' : null);
         } else {
-          setVitalCard(3, 'Largest client', '—', 'No data this period');
+          setVitalCard(4, 'Largest client', '—', 'No data this period');
         }
 
         if (payablesRes.status === 'ok' && payablesRes.suppliers.length > 0) {
           const topSupplier = payablesRes.suppliers[0];
-          setVitalCard(4, 'Largest supplier (payables)', money(topSupplier.amountOwing), `${topSupplier.name} — ${topSupplier.percentOfTotalPayables}% of payables`,
+          setVitalCard(5, 'Largest supplier (payables)', money(topSupplier.amountOwing), `${topSupplier.name} — ${topSupplier.percentOfTotalPayables}% of payables`,
             topSupplier.concentrationNote ? 'warning' : null);
         } else {
-          setVitalCard(4, 'Largest supplier (payables)', '—', 'Could not load');
+          setVitalCard(5, 'Largest supplier (payables)', '—', 'Could not load');
         }
 
         if (awaitingRes.status === 'ok') {
           const stuckNote = awaitingRes.stuckCount > 0
             ? `${awaitingRes.stuckCount} stuck ${awaitingRes.stuckCount === 1 ? 'invoice' : 'invoices'} (${awaitingRes.stuckThresholdBusinessDays}+ business days)`
             : `none over ${awaitingRes.stuckThresholdBusinessDays} business days yet`;
-          setVitalCard(5, 'Invoices awaiting approval', awaitingRes.totalCount, stuckNote);
+          setVitalCard(6, 'Invoices awaiting approval', awaitingRes.totalCount, stuckNote);
         } else {
-          setVitalCard(5, 'Invoices awaiting approval', '—', 'Could not load');
+          setVitalCard(6, 'Invoices awaiting approval', '—', 'Could not load');
         }
 
         if (quotesRes.status === 'ok') {
           const count = quotesRes.quotes.length;
-          setVitalCard(6, 'Quotes awaiting approval', count, count > 0 ? 'Click to review' : 'All caught up');
+          setVitalCard(7, 'Quotes awaiting approval', count, count > 0 ? 'Click to review' : 'All caught up');
         } else {
-          setVitalCard(6, 'Quotes awaiting approval', '—', 'Could not load');
+          setVitalCard(7, 'Quotes awaiting approval', '—', 'Could not load');
         }
 
         const marginTable = document.getElementById('margin-table');
@@ -2314,4 +2379,3 @@
   </script>
 </body>
 </html>
-<script async data-explicit-opt-in="true" data-cookie-opt-in="true" data-deployment-id="dpl_BBzjxxRp25EtDV1dWUBu7F9x9a6X" src="https://vercel.live/_next-live/feedback/feedback.js"></script>
