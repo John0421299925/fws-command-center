@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.44 — 10 Oct 2026
+     v1.44: NEW — "Invoices still to come" now starts from the RATE CARD, so it
+       can see a client the system has never invoiced (Deepwater Plaza).
+       The Status column now says WHY: "Active client, no invoice",
+       "Supplier invoice missing", "Billed two months running" or
+       "Billed once recently". A client with no earlier invoice on record
+       shows a dash for last invoiced, amount and months. Data from
+       api/missing-invoices.js v1.1 and lib/hubspotInvoiceData.js v1.8.
+       Only the table rows in loadMissingInvoices changed.
      v1.43 — 10 Oct 2026
      v1.43: NEW — "Invoices still to come", a missing-invoice check under
        Business Vital Signs. John: the one client with no September invoice
@@ -2681,10 +2690,10 @@
               <tr class="${r.risk ? 'risk' : ''}">
                 <td>${esc(r.client)}</td>
                 <td>${esc(r.supplier)}</td>
-                <td>${esc(r.lastInvoiceDate)}</td>
-                <td class="num">${money(r.lastAmount)}</td>
-                <td>${esc(r.monthsBilled.join(', '))}</td>
-                <td>${r.status}</td>
+                <td>${r.lastInvoiceDate ? esc(r.lastInvoiceDate) : '—'}</td>
+                <td class="num">${r.lastAmount ? money(r.lastAmount) : '—'}</td>
+                <td>${r.monthsBilled && r.monthsBilled.length ? esc(r.monthsBilled.join(', ')) : '—'}</td>
+                <td>${esc(r.reason || r.status)}</td>
               </tr>`).join('')}
             </tbody>`;
         }
