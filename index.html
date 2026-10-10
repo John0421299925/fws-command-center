@@ -1,5 +1,23 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.42 — 10 Oct 2026
+     v1.42: NEW — the dashboard now opens on LAST MONTH (the finished
+       month's billing) and the period dropdown gains it: Last month /
+       This month / Year to date / Financial year to date. John: the
+       figure shown was not a real reflection of the previous month, because
+       it counted invoices by the day they were CREATED, so September's
+       month-end invoices (processed 3 to 9 October) showed under
+       October while grease trap invoices (dated when the work is done)
+       were added to the month before. It now counts by the INVOICE
+       date (the supplier's date), so each invoice sits in the month it
+       belongs to. That change is in lib/hubspotInvoiceData.js v1.6 and
+       covers Revenue, Margin, Payables and the rest with no edit of
+       their own; "This month" is mostly grease trap and ad hoc work
+       billed the day it was done, which is what it should show.
+       The card labels name the month, e.g. "Revenue, last month
+       (September)". This file changed only: the dropdown (both the
+       admin and the rep one), the opening period, and the placeholder
+       text shown while loading.
      v1.41 — 8 Oct 2026
      v1.41: NEW — Agent Health, three changes, with api/status.js v1.6:
        (1) a Time Saver card (it was the one agent with a real health
@@ -898,6 +916,7 @@
     <div class="vital-signs-header">
       <div class="section-heading">Business Vital Signs</div>
       <select id="period-select" onchange="onPeriodChange(this.value)">
+        <option value="lastmonth" selected>Last month</option>
         <option value="month">This month</option>
         <option value="ytd">Year to date</option>
         <option value="fy">Financial year to date</option>
@@ -911,8 +930,8 @@
          approval, 7 Quotes awaiting approval. If a card is ever added
          or moved again, those numbers must change with it. -->
     <div class="vital-signs-grid" id="vital-signs-grid">
-      <div class="vital-card"><p class="label">Revenue, this month</p><p class="value">…</p></div>
-      <div class="vital-card"><p class="label">Payables, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Revenue, last month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">Payables, last month</p><p class="value">…</p></div>
       <div class="vital-card"><p class="label">Blended margin</p><p class="value">…</p></div>
       <div class="vital-card"><p class="label">Overdue receivables</p><p class="value">…</p></div>
       <div class="vital-card"><p class="label">Largest client</p><p class="value">…</p></div>
@@ -951,8 +970,8 @@
       <div class="vital-signs-grid" id="deals-vital-signs-grid">
         <div class="vital-card"><p class="label">Open pipeline</p><p class="value">…</p></div>
         <div class="vital-card"><p class="label">Weighted pipeline</p><p class="value">…</p></div>
-        <div class="vital-card"><p class="label">New clients won, this month</p><p class="value">…</p></div>
-        <div class="vital-card"><p class="label">Clients lost, this month</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">New clients won, last month</p><p class="value">…</p></div>
+        <div class="vital-card"><p class="label">Clients lost, last month</p><p class="value">…</p></div>
       </div>
       <details class="drilldown">
         <summary>Deals by stage</summary>
@@ -1015,13 +1034,14 @@
     <div class="vital-signs-header">
       <div class="section-heading">Your Sales Centre</div>
       <select id="rep-period-select" onchange="onPeriodChange(this.value)">
+        <option value="lastmonth" selected>Last month</option>
         <option value="month">This month</option>
         <option value="ytd">Year to date</option>
         <option value="fy">Financial year to date</option>
       </select>
     </div>
     <div class="vital-signs-grid" id="rep-vital-signs-grid">
-      <div class="vital-card"><p class="label">My revenue, this month</p><p class="value">…</p></div>
+      <div class="vital-card"><p class="label">My revenue, last month</p><p class="value">…</p></div>
       <div class="vital-card"><p class="label">My blended margin</p><p class="value">…</p></div>
       <a class="vital-card quote-vital" href="/quote-approvals.html"><p class="label">Quotes awaiting approval</p><p class="value">…</p></a>
     </div>
@@ -1517,8 +1537,8 @@
         if (data.status !== 'ok') {
           grid.children[0].innerHTML = '<p class="label">Open pipeline</p><p class="value">—</p><p class="sub">Could not load</p>';
           grid.children[1].innerHTML = '<p class="label">Weighted pipeline</p><p class="value">—</p>';
-          grid.children[2].innerHTML = '<p class="label">New clients won, this month</p><p class="value">—</p>';
-          grid.children[3].innerHTML = '<p class="label">Clients lost, this month</p><p class="value">—</p>';
+          grid.children[2].innerHTML = '<p class="label">New clients won</p><p class="value">—</p>';
+          grid.children[3].innerHTML = '<p class="label">Clients lost</p><p class="value">—</p>';
           return;
         }
 
@@ -2200,7 +2220,8 @@
     // visible at a time, so there's no conflict.
     // v1.38: Payables follows this selector too, being built from the
     // same margin-by-client response as Blended margin.
-    let selectedPeriod = 'month';
+    // v1.42: opens on LAST MONTH, the finished month's billing
+    let selectedPeriod = 'lastmonth';
     function onPeriodChange(value) {
       selectedPeriod = value;
       if (isAdminGlobal) {
