@@ -1,5 +1,18 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.43 — 10 Oct 2026
+     v1.43: NEW — "Invoices still to come", a missing-invoice check under
+       Business Vital Signs. John: the one client with no September invoice
+       (Deepwater Plaza) was only found by hand. The new section compares
+       last month with the two months before it, by supplier invoice date,
+       and lists any client + supplier that was billed before but has no
+       invoice yet: "likely missing" if billed in both earlier months,
+       "to check" if only one (grease trap and pump-out invoices are not
+       monthly, so they usually sit here). The heading shows the counts
+       without opening it, and turns red when anything is likely missing.
+       Admin only; refreshed hourly; a pair drops off the list by itself
+       once its invoice arrives. Data comes from api/missing-invoices.js
+       (new) and lib/hubspotInvoiceData.js v1.7. Nothing else changed.
      v1.42 — 10 Oct 2026
      v1.42: NEW — the dashboard now opens on LAST MONTH (the finished
        month's billing) and the period dropdown gains it: Last month /
@@ -973,7 +986,17 @@
         <div class="vital-card"><p class="label">New clients won, last month</p><p class="value">…</p></div>
         <div class="vital-card"><p class="label">Clients lost, last month</p><p class="value">…</p></div>
       </div>
-      <details class="drilldown">
+      <!-- v1.43: Invoices still to come. Loaded on its own (not tied to the
+         period dropdown: it always means "last month versus the two months
+         before"). The summary shows the counts so a problem is visible
+         without opening it. -->
+    <details class="drilldown" id="missing-invoices-details">
+      <summary id="missing-invoices-summary">Invoices still to come (loading…)</summary>
+      <table id="missing-invoices-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
+      <div class="vital-signs-note" id="missing-invoices-note" style="margin:0; padding:10px 16px 14px;"></div>
+    </details>
+
+    <details class="drilldown">
         <summary>Deals by stage</summary>
         <div id="deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
       </details>
@@ -1489,6 +1512,7 @@
         startStaggered(loadVitalSigns, 0, 300000);
         startStaggered(loadExceptions, 1200, 60000);
         startStaggered(loadDealsPipeline, 2400, 300000);
+        startStaggered(loadMissingInvoices, 6000, 3600000);   // v1.43: after the others, hourly
       } else {
         startStaggered(loadMySales, 0, 300000);
       }
@@ -2620,6 +2644,55 @@
           table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
           supplierPayablesLoadedFor = null;
         }
+      }
+    }
+
+    // v1.43: Invoices still to come. Last month versus the two months before it;
+    // independent of the period dropdown. Likely-missing rows are shaded (class "risk").
+    async function loadMissingInvoices() {
+      const summary = document.getElementById('missing-invoices-summary');
+      const table = document.getElementById('missing-invoices-table');
+      const note = document.getElementById('missing-invoices-note');
+      if (!summary || !table) return;
+      try {
+        const res = await fetch('/api/missing-invoices');
+        const data = await res.json();
+        if (data.status !== 'ok') {
+          summary.textContent = 'Invoices still to come (could not load)';
+          summary.style.color = '';
+          table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
+          note.textContent = '';
+          return;
+        }
+        const likely = data.likelyMissingCount;
+        const check = data.toCheckCount;
+        summary.textContent = `Invoices still to come, ${data.lastMonth}: ${likely} likely missing, ${check} to check`;
+        summary.style.color = likely > 0 ? 'var(--error)' : '';
+        const rows = [
+          ...data.likelyMissing.map(r => ({ ...r, status: 'Likely missing', risk: true })),
+          ...data.toCheck.map(r => ({ ...r, status: 'Check', risk: false })),
+        ];
+        if (rows.length === 0) {
+          table.innerHTML = `<tbody><tr><td style="padding:16px; color:var(--muted)">Nothing outstanding: everyone billed before has an invoice for ${esc(data.lastMonth)}.</td></tr></tbody>`;
+        } else {
+          table.innerHTML = `
+            <thead><tr><th>Client</th><th>Supplier</th><th>Last invoiced</th><th>Amount</th><th>Billed in</th><th>Status</th></tr></thead>
+            <tbody>${rows.map(r => `
+              <tr class="${r.risk ? 'risk' : ''}">
+                <td>${esc(r.client)}</td>
+                <td>${esc(r.supplier)}</td>
+                <td>${esc(r.lastInvoiceDate)}</td>
+                <td class="num">${money(r.lastAmount)}</td>
+                <td>${esc(r.monthsBilled.join(', '))}</td>
+                <td>${r.status}</td>
+              </tr>`).join('')}
+            </tbody>`;
+        }
+        note.textContent = data.note || '';
+      } catch (err) {
+        console.error('loadMissingInvoices failed:', err);
+        summary.textContent = 'Invoices still to come (could not load)';
+        table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
       }
     }
   </script>
