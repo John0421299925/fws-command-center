@@ -2,7 +2,17 @@
 // FWS Command Center — Accounts Payable Aging (largest suppliers)
 // Deploy as: api/ap-aging.js
 // ================================================================
-// Version: v1.2
+// Version: v1.3
+//
+// v1.3: the Xero reader (fws-xero-reader /api/query) now requires a
+// shared secret, so this endpoint sends it as an x-reader-key header.
+// The secret is XERO_READER_KEY, a Vercel environment variable that must
+// be set on THIS project (the Command Center) with exactly the same value
+// as on fws-xero-reader. If it is missing here, the endpoint says so
+// plainly instead of failing with a confusing error. If the reader rejects
+// the key (HTTP 401) the error says to check that the two values match.
+// Read inside the handler on every request, so a changed value is picked
+// up without waiting for a warm instance to recycle. Nothing else changed.
 //
 // v1.2: swapped the old inline single-shared-password cookie check
 // for the shared verifySession() from lib/auth.js — required now
@@ -66,15 +76,22 @@ export default async function handler(req, res) {
     return res.status(403).json({ status: 'error', error: 'This view is company-wide and restricted to admin accounts' });
   }
 
+  // v1.3: the secret the Xero reader now requires
+  const readerKey = process.env.XERO_READER_KEY;
+  if (!readerKey) {
+    return res.status(500).json({ status: 'error', error: 'XERO_READER_KEY is not set on the Command Center project, so it cannot read Xero. Add it in Vercel with the same value as fws-xero-reader.' });
+  }
+
   try {
     const where = 'Status=="AUTHORISED" AND Type=="ACCPAY" AND AmountDue>0';
     const url = `${XERO_READER_BASE_URL}/api/query?resource=Invoices&where=${encodeURIComponent(where)}&order=DueDate ASC`;
 
-    const response = await fetch(url);
+    const response = await fetch(url, { headers: { 'x-reader-key': readerKey } });
     const data = await response.json();
 
     if (!response.ok) {
-      return res.status(response.status).json({ status: 'error', error: 'fws-xero-reader query failed', details: data });
+      const hint = response.status === 401 ? ' (the reader rejected the key: check XERO_READER_KEY is the same on both projects)' : '';
+      return res.status(response.status).json({ status: 'error', error: `fws-xero-reader query failed${hint}`, details: data });
     }
 
     const bills = data.Invoices || [];
