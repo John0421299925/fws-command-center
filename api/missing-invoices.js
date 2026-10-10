@@ -2,7 +2,18 @@
 // FWS Command Center — Invoices still to come (missing-invoice check)
 // Deploy as: api/missing-invoices.js
 // ================================================================
-// Version: v1.1
+// Version: v1.2
+//
+// v1.2: FIX - a HELD invoice is no longer reported as missing. John, 10 Oct
+// 2026: the dashboard said "4 likely missing" and one of them was Fairfield
+// Forum, whose invoice does exist, it is simply held in HubSpot (Needs Review)
+// until the prices are agreed. Held invoices dated last month are now read as
+// well (lib v1.9) and a client or supplier that has one is listed in a new
+// onHold list with the reason "Held for review", showing the held invoice's
+// date and amount, instead of in likelyMissing. They are counted separately
+// (onHoldCount) and do not turn the heading red, but they stay visible,
+// because a held invoice is still money that has not gone out. Nothing else
+// changed.
 //
 // v1.1: NEW - the check now also starts from the RATE CARD, not just from past
 // invoices. v1.0 could only see a client the system had already invoiced, and
@@ -162,6 +173,35 @@ export default async function handler(req, res) {
 
     const invoices = await fetchPassedInvoices(start(3), start(0) - 1);
 
+    // v1.2: invoices that exist but are HELD (Needs Review), dated last month
+    let heldInvoices = [];
+    try { heldInvoices = await fetchPassedInvoices(start(1), start(0) - 1, 'Needs Review'); } catch (e) { console.log(`⚠️ Could not read held invoices for the missing-invoice check: ${e.message}`); }
+    const heldBy = new Map();   // company key -> Map(family|'' -> { supplier, amount, lastDate })
+    for (const inv of heldInvoices) {
+      if (String(inv.billingDate || '').slice(0, 7) !== kLast) continue;
+      const parsed = parseInvoiceTitle(inv.properties?.hs_title);
+      if (!parsed) continue;
+      const ck = norm(parsed.company);
+      const fam = supplierFamily(parsed.supplier) || '';
+      if (!heldBy.has(ck)) heldBy.set(ck, new Map());
+      const slot = heldBy.get(ck).get(fam) || { supplier: prettySupplier(parsed.supplier), amount: 0, lastDate: '' };
+      slot.amount += parseFloat(inv.properties?.hs_amount_billed) || 0;
+      if (inv.billingDate > slot.lastDate) slot.lastDate = inv.billingDate;
+      heldBy.get(ck).set(fam, slot);
+    }
+    const heldFor = (nameKeys, family) => {   // family null = any supplier
+      let found = null;
+      for (const nk of nameKeys) {
+        const fams = heldBy.get(nk);
+        if (!fams) continue;
+        for (const [f, slot] of fams) {
+          if (family && f !== family) continue;
+          found = found ? { ...found, amount: found.amount + slot.amount, lastDate: slot.lastDate > found.lastDate ? slot.lastDate : found.lastDate } : { ...slot };
+        }
+      }
+      return found;
+    };
+
     const pairs = new Map();
     for (const inv of invoices) {
       const month = String(inv.billingDate || '').slice(0, 7);
@@ -205,6 +245,7 @@ export default async function handler(req, res) {
 
     const likelyMissing = [];
     const toCheck = [];
+    const onHold = [];
     const covered = new Set();   // `${companyKey}||${family}` or `${companyKey}||*`: already listed from the rate card
 
     // ---- v1.1: from the rate card ----
@@ -217,6 +258,12 @@ export default async function handler(req, res) {
       for (const nk of nameKeys) if (billedLast.has(nk)) { billedAtAll = true; for (const f of billedLast.get(nk)) billedFamilies.add(f); }
 
       if (!billedAtAll) {
+        const heldAll = heldFor(nameKeys, null);
+        if (heldAll) {
+          onHold.push({ client: unit.names[0], supplier: heldAll.supplier, reason: 'Held for review', lastInvoiceDate: heldAll.lastDate, lastAmount: Math.round(heldAll.amount * 100) / 100, monthsBilled: [] });
+          for (const nk of nameKeys) covered.add(`${nk}||*`);
+          continue;
+        }
         const providers = [...unit.providers.values()];
         const h = historyOf(unit.names, null);
         likelyMissing.push({
@@ -232,6 +279,12 @@ export default async function handler(req, res) {
       }
       for (const [fam, provider] of unit.providers) {
         if (NOT_MONTHLY_FAMILIES.has(fam) || billedFamilies.has(fam)) continue;
+        const heldFam = heldFor(nameKeys, fam);
+        if (heldFam) {
+          onHold.push({ client: unit.names[0], supplier: prettySupplier(provider), reason: 'Held for review', lastInvoiceDate: heldFam.lastDate, lastAmount: Math.round(heldFam.amount * 100) / 100, monthsBilled: [] });
+          for (const nk of nameKeys) covered.add(`${nk}||${fam}`);
+          continue;
+        }
         const h = historyOf(unit.names, fam);
         likelyMissing.push({
           client: unit.names[0],
@@ -252,6 +305,11 @@ export default async function handler(req, res) {
       if (isIgnored(e.company, e.supplier)) continue;
       const ck = norm(e.company);
       if (covered.has(`${ck}||*`) || (e.family && covered.has(`${ck}||${e.family}`))) continue;
+      const heldPair = heldFor([ck], e.family || '');
+      if (heldPair) {
+        onHold.push({ client: e.company, supplier: heldPair.supplier, reason: 'Held for review', lastInvoiceDate: heldPair.lastDate, lastAmount: Math.round(heldPair.amount * 100) / 100, monthsBilled: [] });
+        continue;
+      }
       const had = [kP1, kP2].filter((k) => e.months[k]);
       if (had.length === 0) continue;
       const item = {
@@ -267,6 +325,7 @@ export default async function handler(req, res) {
     const byValue = (a, b) => b.lastAmount - a.lastAmount;
     likelyMissing.sort(byValue);
     toCheck.sort(byValue);
+    onHold.sort(byValue);
 
     return res.status(200).json({
       status: 'ok',
@@ -275,10 +334,12 @@ export default async function handler(req, res) {
       comparedWith: [LABEL(kP2), LABEL(kP1)],
       billedLastMonth,
       likelyMissingCount: likelyMissing.length,
+      onHoldCount: onHold.length,
       toCheckCount: toCheck.length,
       likelyMissing,
+      onHold,
       toCheck,
-      note: 'Starts from the rate card: every client with an active bin service should have an invoice each month. Also looks at past invoices (supplier invoice date). Grease trap and pump-out invoices are not monthly, so they often show under "to check". A line disappears as soon as its invoice arrives.',
+      note: 'Starts from the rate card: every client with an active bin service should have an invoice each month. Also looks at past invoices (supplier invoice date). Grease trap and pump-out invoices are not monthly, so they often show under "to check". An invoice that exists but is held for review shows under "on hold", not as missing. A line disappears as soon as its invoice arrives.',
     });
   } catch (error) {
     return res.status(500).json({ status: 'error', error: error.message });
