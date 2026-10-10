@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.45 — 10 Oct 2026
+     v1.45: FIX — "Invoices still to come" no longer calls a HELD invoice
+       missing. John: it said 4 likely missing and one was Fairfield Forum,
+       whose invoice exists but is held in HubSpot. Held invoices now get
+       their own amber lines ("Held for review", with the held invoice's date
+       and amount), shown after the likely-missing ones, and the heading adds
+       ", N on hold" when there are any. They do not turn the heading red.
+       Data from api/missing-invoices.js v1.2 and lib/hubspotInvoiceData.js v1.9.
      v1.44 — 10 Oct 2026
      v1.44: NEW — "Invoices still to come" now starts from the RATE CARD, so it
        can see a client the system has never invoiced (Deepwater Plaza).
@@ -822,6 +830,7 @@
     }
     .drilldown td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .drilldown tr.risk td:first-child { color: var(--error); font-weight: 500; }
+    .drilldown tr.hold td:first-child { color: var(--unknown); font-weight: 500; }   /* v1.45: amber, held for review */
     /* v1.26: total row at the bottom of a drill-down table — bolder
        text and a slightly heavier top border than a normal data row,
        so it reads clearly as a sum rather than just another entry. */
@@ -2675,10 +2684,12 @@
         }
         const likely = data.likelyMissingCount;
         const check = data.toCheckCount;
-        summary.textContent = `Invoices still to come, ${data.lastMonth}: ${likely} likely missing, ${check} to check`;
+        const hold = data.onHoldCount || 0;
+        summary.textContent = `Invoices still to come, ${data.lastMonth}: ${likely} likely missing, ${hold ? hold + ' on hold, ' : ''}${check} to check`;
         summary.style.color = likely > 0 ? 'var(--error)' : '';
         const rows = [
           ...data.likelyMissing.map(r => ({ ...r, status: 'Likely missing', risk: true })),
+          ...(data.onHold || []).map(r => ({ ...r, status: 'Held for review', hold: true })),
           ...data.toCheck.map(r => ({ ...r, status: 'Check', risk: false })),
         ];
         if (rows.length === 0) {
@@ -2687,7 +2698,7 @@
           table.innerHTML = `
             <thead><tr><th>Client</th><th>Supplier</th><th>Last invoiced</th><th>Amount</th><th>Billed in</th><th>Status</th></tr></thead>
             <tbody>${rows.map(r => `
-              <tr class="${r.risk ? 'risk' : ''}">
+              <tr class="${r.risk ? 'risk' : (r.hold ? 'hold' : '')}">
                 <td>${esc(r.client)}</td>
                 <td>${esc(r.supplier)}</td>
                 <td>${r.lastInvoiceDate ? esc(r.lastInvoiceDate) : '—'}</td>
