@@ -2,9 +2,36 @@
 // FWS Command Center — Invoices still to come (missing-invoice check)
 // Deploy as: api/missing-invoices.js
 // ================================================================
-// Version: v1.0
+// Version: v1.1
 //
-// PURPOSE: catch an invoice that should have arrived but has not, before
+// v1.1: NEW - the check now also starts from the RATE CARD, not just from past
+// invoices. v1.0 could only see a client the system had already invoiced, and
+// the system only began on 10 Sept 2026, so it could not see Deepwater Plaza
+// (the case that started this): the system has never invoiced it. Now every
+// client with an ACTIVE bin service on the rate card is expected to be billed
+// every month, and two new things are flagged for LAST MONTH:
+//   "Active client, no invoice"      - the client has an active service but no
+//                                      invoice from anyone for last month
+//   "Supplier invoice missing"       - the client WAS billed, but a supplier
+//                                      that has an active bin service for it
+//                                      has no invoice (e.g. Bingo came, Remondis
+//                                      did not)
+// Both go in likelyMissing, each with a "reason". The v1.0 history check
+// (billed two months running / once in two months) still runs for everything
+// the rate card does not cover, and a pair is never listed twice.
+// What counts as a monthly bin service: its name is not a fee, levy, grease
+// trap, tanker, sludge, rental, transport and so on (see NOT_A_BIN_SERVICE).
+// Lost accounts need no list any more: their services are marked "Moved to
+// another SP", so they are not Active, so they are not expected. The
+// IGNORE_NAMES list still applies to the history check.
+// Supplier names differ between the rate card ("Bingo Industries") and the
+// invoice titles ("Bingo Waste Services"), so suppliers are compared by
+// family (Bingo, Remondis, Waste Free, Premier, Wanless, JR Richards); a
+// supplier outside that list is never reported as missing, to avoid noise.
+// A service linked to more than one company counts as billed if ANY of its
+// companies has an invoice.
+//
+// v1.0: PURPOSE: catch an invoice that should have arrived but has not, before
 // anyone has to notice by accident. John, 10 Oct 2026: the one active client
 // with no September invoice (Deepwater Plaza, Bingo's organic bins) was only
 // found by hand. This looks at every client + supplier pair, month by month,
@@ -24,21 +51,33 @@
 // supplier are read from the invoice title ("Client - Supplier - date"), which
 // the invoice automation has always written that way.
 //
-// Lost accounts: put a client or supplier name (lower case, any part of it) in
-// IGNORE_NAMES below and it never appears. Röhlig is already there: it has gone
-// to another supplier, so its invoices have rightly stopped.
-//
 // Admin only (company-wide). Usage: GET /api/missing-invoices
 // ================================================================
 
 import { verifySession } from '../lib/auth.js';
-import { fetchPassedInvoices, sydneyYMD } from '../lib/hubspotInvoiceData.js';
+import { fetchPassedInvoices, hubspotPost, sydneyYMD } from '../lib/hubspotInvoiceData.js';
 
+// History check only (v1.0): names left off because the account has gone.
 const IGNORE_NAMES = ['röhlig', 'rohlig'];
+
+// v1.1: services whose name says they are a fee or a liquid/irregular service, not a monthly bin collection
+const NOT_A_BIN_SERVICE = /grease|tanker|sludge|effluent|cooking oil|levy|\bfee\b|surcharge|excess|futile|monthly|rental|admin|public holiday|delivery|change.?over|transport/i;
+
+// v1.1: supplier families, matched on the start of the name with spaces and punctuation removed
+const FAMILIES = [['bingo', 'bingo'], ['remondis', 'remondis'], ['wastefree', 'wastefree'], ['premier', 'premier'], ['wanless', 'wanless'], ['jrrichards', 'jrrichards'], ['futurewaste', 'jrrichards'], ['hlw', 'hlw'], ['cleanaway', 'cleanaway']];
+// Irregular suppliers: never expected every month
+const NOT_MONTHLY_FAMILIES = new Set(['hlw', 'cleanaway']);
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const SHORT = (key) => MONTH_NAMES[Number(key.slice(5, 7)) - 1].slice(0, 3);
 const LABEL = (key) => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`;
+
+const norm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const supplierFamily = (name) => {
+  const k = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const [prefix, fam] of FAMILIES) if (k.startsWith(prefix)) return fam;
+  return null;
+};
 
 // "Client - Site - Supplier - 2026-09-30 23:09:00" -> { company, supplier }
 function parseInvoiceTitle(title) {
@@ -56,6 +95,53 @@ function prettySupplier(name) {
 function isIgnored(company, supplier) {
   const hay = `${company} ${supplier}`.toLowerCase();
   return IGNORE_NAMES.some((n) => hay.includes(n));
+}
+
+// v1.1: every ACTIVE bin service on the rate card, with its client company/companies
+async function loadExpectedClients() {
+  const services = [];
+  let after;
+  for (let page = 0; page < 10; page++) {
+    const data = await hubspotPost('/crm/v3/objects/0-162/search', {
+      limit: 100,
+      after,
+      properties: ['hs_name', 'service_provider'],
+      filterGroups: [{ filters: [{ propertyName: 'service_status', operator: 'EQ', value: 'Active' }] }],
+    });
+    services.push(...(data.results || []));
+    after = data.paging?.next?.after;
+    if (!after) break;
+  }
+  const bin = services.filter((s) => !NOT_A_BIN_SERVICE.test(String(s.properties?.hs_name || '')));
+  if (bin.length === 0) return [];
+
+  const companyIdsByService = new Map();
+  for (let i = 0; i < bin.length; i += 100) {
+    const chunk = bin.slice(i, i + 100);
+    const data = await hubspotPost('/crm/v4/associations/0-162/companies/batch/read', { inputs: chunk.map((s) => ({ id: String(s.id) })) });
+    for (const r of data.results || []) {
+      companyIdsByService.set(String(r.from?.id), (r.to || []).map((t) => String(t.toObjectId)));
+    }
+  }
+  const allCompanyIds = [...new Set([...companyIdsByService.values()].flat())];
+  const nameById = new Map();
+  for (let i = 0; i < allCompanyIds.length; i += 100) {
+    const data = await hubspotPost('/crm/v3/objects/companies/batch/read', { properties: ['name'], inputs: allCompanyIds.slice(i, i + 100).map((id) => ({ id })) });
+    for (const c of data.results || []) nameById.set(String(c.id), c.properties?.name || '');
+  }
+
+  // one "client unit" per distinct set of companies
+  const units = new Map();
+  for (const s of bin) {
+    const ids = (companyIdsByService.get(String(s.id)) || []).filter((id) => nameById.get(id));
+    if (ids.length === 0) continue;
+    const unitKey = [...ids].sort().join(',');
+    if (!units.has(unitKey)) units.set(unitKey, { names: ids.map((id) => nameById.get(id).replace(/\s+/g, ' ').trim()), providers: new Map() });
+    const provider = String(s.properties?.service_provider || '').trim();
+    const fam = supplierFamily(provider);
+    if (fam && !units.get(unitKey).providers.has(fam)) units.get(unitKey).providers.set(fam, provider);
+  }
+  return [...units.values()];
 }
 
 export default async function handler(req, res) {
@@ -81,9 +167,9 @@ export default async function handler(req, res) {
       const month = String(inv.billingDate || '').slice(0, 7);
       if (month !== kLast && month !== kP1 && month !== kP2) continue;
       const parsed = parseInvoiceTitle(inv.properties?.hs_title);
-      if (!parsed || isIgnored(parsed.company, parsed.supplier)) continue;
-      const pairKey = `${parsed.company.toLowerCase()}||${parsed.supplier.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-      if (!pairs.has(pairKey)) pairs.set(pairKey, { company: parsed.company, supplier: prettySupplier(parsed.supplier), months: {} });
+      if (!parsed) continue;
+      const pairKey = `${norm(parsed.company)}||${parsed.supplier.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      if (!pairs.has(pairKey)) pairs.set(pairKey, { company: parsed.company, supplier: prettySupplier(parsed.supplier), family: supplierFamily(parsed.supplier), months: {} });
       const entry = pairs.get(pairKey);
       const slot = entry.months[month] || (entry.months[month] = { count: 0, amount: 0, lastDate: '' });
       slot.count++;
@@ -91,19 +177,89 @@ export default async function handler(req, res) {
       if (inv.billingDate > slot.lastDate) slot.lastDate = inv.billingDate;
     }
 
-    let billedLastMonth = 0;
+    // what was billed last month, by company: the supplier families that billed it
+    const billedLast = new Map();
+    for (const e of pairs.values()) {
+      if (!e.months[kLast]) continue;
+      const k = norm(e.company);
+      if (!billedLast.has(k)) billedLast.set(k, new Set());
+      billedLast.get(k).add(e.family);
+    }
+
+    // the latest earlier billing of this client (and supplier family, if given), for the "last invoiced" columns
+    const historyOf = (companyNames, family) => {
+      const keys = companyNames.map(norm);
+      let best = null;
+      const seen = new Set();
+      for (const e of pairs.values()) {
+        if (!keys.includes(norm(e.company))) continue;
+        if (family && e.family !== family) continue;
+        for (const k of [kP1, kP2]) {
+          if (!e.months[k]) continue;
+          seen.add(k);
+          if (!best || k > best.k) best = { k, lastDate: e.months[k].lastDate, amount: e.months[k].amount };
+        }
+      }
+      return best ? { ...best, months: [...seen].sort().map(SHORT) } : null;
+    };
+
     const likelyMissing = [];
     const toCheck = [];
+    const covered = new Set();   // `${companyKey}||${family}` or `${companyKey}||*`: already listed from the rate card
+
+    // ---- v1.1: from the rate card ----
+    let expectedUnits = [];
+    try { expectedUnits = await loadExpectedClients(); } catch (e) { console.log(`⚠️ Could not read the rate card services for the missing-invoice check: ${e.message}`); }
+    for (const unit of expectedUnits) {
+      const nameKeys = unit.names.map(norm);
+      const billedFamilies = new Set();
+      let billedAtAll = false;
+      for (const nk of nameKeys) if (billedLast.has(nk)) { billedAtAll = true; for (const f of billedLast.get(nk)) billedFamilies.add(f); }
+
+      if (!billedAtAll) {
+        const providers = [...unit.providers.values()];
+        const h = historyOf(unit.names, null);
+        likelyMissing.push({
+          client: unit.names[0],
+          supplier: providers.length ? providers.map(prettySupplier).join(' / ') : '—',
+          reason: 'Active client, no invoice',
+          lastInvoiceDate: h ? h.lastDate : null,
+          lastAmount: h ? Math.round(h.amount * 100) / 100 : 0,
+          monthsBilled: h ? h.months : [],
+        });
+        for (const nk of nameKeys) covered.add(`${nk}||*`);
+        continue;
+      }
+      for (const [fam, provider] of unit.providers) {
+        if (NOT_MONTHLY_FAMILIES.has(fam) || billedFamilies.has(fam)) continue;
+        const h = historyOf(unit.names, fam);
+        likelyMissing.push({
+          client: unit.names[0],
+          supplier: prettySupplier(provider),
+          reason: 'Supplier invoice missing',
+          lastInvoiceDate: h ? h.lastDate : null,
+          lastAmount: h ? Math.round(h.amount * 100) / 100 : 0,
+          monthsBilled: h ? h.months : [],
+        });
+        for (const nk of nameKeys) covered.add(`${nk}||${fam}`);
+      }
+    }
+
+    // ---- v1.0: from past invoices, for everything not already listed ----
+    let billedLastMonth = 0;
     for (const e of pairs.values()) {
       if (e.months[kLast]) { billedLastMonth++; continue; }
+      if (isIgnored(e.company, e.supplier)) continue;
+      const ck = norm(e.company);
+      if (covered.has(`${ck}||*`) || (e.family && covered.has(`${ck}||${e.family}`))) continue;
       const had = [kP1, kP2].filter((k) => e.months[k]);
       if (had.length === 0) continue;
-      const latestKey = had[0];   // kP1 (the month just before last month) is newer than kP2
       const item = {
         client: e.company,
         supplier: e.supplier,
-        lastInvoiceDate: e.months[latestKey].lastDate,
-        lastAmount: Math.round(e.months[latestKey].amount * 100) / 100,
+        reason: had.length === 2 ? 'Billed two months running' : 'Billed once recently',
+        lastInvoiceDate: e.months[had[0]].lastDate,
+        lastAmount: Math.round(e.months[had[0]].amount * 100) / 100,
         monthsBilled: [kP2, kP1].filter((k) => e.months[k]).map(SHORT),
       };
       (had.length === 2 ? likelyMissing : toCheck).push(item);
@@ -122,7 +278,7 @@ export default async function handler(req, res) {
       toCheckCount: toCheck.length,
       likelyMissing,
       toCheck,
-      note: 'Counted by the supplier invoice date. Grease trap and pump-out invoices are not monthly, so they often show under "to check". A pair disappears from this list as soon as its invoice arrives.',
+      note: 'Starts from the rate card: every client with an active bin service should have an invoice each month. Also looks at past invoices (supplier invoice date). Grease trap and pump-out invoices are not monthly, so they often show under "to check". A line disappears as soon as its invoice arrives.',
     });
   } catch (error) {
     return res.status(500).json({ status: 'error', error: error.message });
