@@ -1,5 +1,16 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.49 — 11 Oct 2026
+     v1.49: NEW — a MONTH SWITCH on the "Things that don't add up" report.
+       John asked why the report still showed 13 price differences after the
+       rate card was matched to James's July and August invoices. The report
+       checks LAST month (September), whose Xero lines the system created
+       before the rate card was fixed, so they carry the old prices. A month
+       dropdown (last month, the month before, and the one before that) now
+       sits at the top of the report so John can look at August or July, which
+       is what the rate card was matched to. The choice is kept when the
+       report refreshes. The default is still last month. Only the audit
+       section changed.
      v1.48 — 11 Oct 2026
      v1.48: FIX — the price-difference table said "James" over a price that is
        simply whatever is on the Xero line. John saw Mt Annan general waste at
@@ -2758,7 +2769,9 @@
 
     // v1.46: Things that don't add up. The monthly rate card audit for last month:
     // Xero lines against HubSpot services, and the rate card on its own.
-    async function loadAudit() {
+    let auditMonth = '';   // v1.49: '' = last month; otherwise YYYY-MM chosen in the dropdown
+    async function loadAudit(chosen) {
+      if (typeof chosen === 'string') auditMonth = chosen;
       const summary = document.getElementById('audit-summary');
       const body = document.getElementById('audit-body');
       if (!summary || !body) return;
@@ -2766,10 +2779,12 @@
       const btn0 = document.getElementById('audit-refresh');
       if (btn0) { btn0.disabled = true; btn0.textContent = 'Refreshing…'; }
       const link = (text, url, title) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener"${title ? ` title="${esc(title)}"` : ''} style="color:inherit; text-decoration:underline">${esc(text)} ↗</a>` : esc(text);
-      const refreshBar = (stamp) => `<div style="margin-bottom:6px; font-size:12px; color:var(--muted)">${stamp ? esc(stamp) + ' · ' : ''}<button id="audit-refresh" onclick="loadAudit()" style="font-size:12px; padding:2px 8px; cursor:pointer">Refresh now</button></div>`;
+      const monthOptions = [1, 2, 3].map((k) => { const dt = new Date(new Date().getFullYear(), new Date().getMonth() - k, 1); const val = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); return { val: k === 1 ? '' : val, text: monthNames[dt.getMonth()] + ' ' + dt.getFullYear() + (k === 1 ? ' (last month)' : '') }; });
+      const monthSelect = `<select id="audit-month" onchange="loadAudit(this.value)" style="font-size:12px; padding:2px 4px; margin-right:6px">${monthOptions.map((o) => `<option value="${o.val}"${o.val === auditMonth ? ' selected' : ''}>${o.text}</option>`).join('')}</select>`;
+      const refreshBar = (stamp) => `<div style="margin-bottom:6px; font-size:12px; color:var(--muted)">Month: ${monthSelect}${stamp ? esc(stamp) + ' · ' : ''}<button id="audit-refresh" onclick="loadAudit()" style="font-size:12px; padding:2px 8px; cursor:pointer">Refresh now</button></div>`;
       const price = (n) => { const v = Number(n); if (!isFinite(v)) return '—'; const s = v < 10 ? v.toFixed(3).replace(/0$/, '') : v.toFixed(2); return '$' + s; };
       try {
-        const res = await fetch('/api/rate-card-audit');
+        const res = await fetch('/api/rate-card-audit' + (auditMonth ? '?month=' + auditMonth : ''));
         const d = await res.json();
         if (d.status !== 'ok') {
           summary.textContent = "Things that don't add up (could not load)";
