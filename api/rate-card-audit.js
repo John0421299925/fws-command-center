@@ -2,7 +2,19 @@
 // FWS Command Center — "Things that don't add up" (rate card audit)
 // Deploy as: api/rate-card-audit.js
 // ================================================================
-// Version: v1.3
+// Version: v1.4
+//
+// v1.4: KNOWN PRICE DIFFERENCES. John, 11 Oct 2026, looking at the August view: six lines
+// still showed as differences although none needs a rate card change, and he wants the
+// report to show only what is NEW. A price difference is now marked known when its
+// (service, Xero price) pair is on KNOWN_PRICE_DIFFS below. Known ones are still listed,
+// after the new ones, and counted separately (counts.priceDiffsKnown); counts.priceDiffs
+// is now the NEW ones only. The six accepted today: Richmond Mall's old August pricing
+// (general waste $82.49, co-mingle $28.95, excess weight $0.46, before the September
+// per-bin arrangement), Jax general waste $74.55 (four collections at the old price in
+// INV-1557), Glenrose excess weight $0.45 (two lines in INV-1573) and M4 West's empty
+// co-mingle line at $29.89 (INV-1548, quantity 0). If James changes a price the pair no
+// longer matches, so it shows as new again.
 //
 // v1.3: every line now says WHICH INVOICE the Xero price came from. John, 11 Oct 2026:
 // the report showed Mt Annan general waste at "$201.55" under a heading that said
@@ -94,6 +106,9 @@ const KNOWN_BELOW_COST = new Set(['683982006750', '727919516129', '704835596747'
   '695494965711', '694893534664', '688677334509', '634052641272', '694108818878', '696547167700',
   // Pheasant Nest South transport set to $550, equal to JR Richards' cost: accepted at cost, 11 Oct 2026
   '684972249575']);
+
+// "service id|Xero price" pairs John has accepted as explained (see v1.4). Add a pair here to accept one.
+const KNOWN_PRICE_DIFFS = new Set(['726893042115|82.49', '726588015053|28.95', '726588014027|0.46', '663841015237|74.55', '704193481194|0.45', '683982006750|29.89']);
 
 const SUPPLIER_NAMES = /^(bingo industries|remondis australia pty ltd|hlw group|jr richards|waste free \(aust\) pty ltd|power waste management pty ltd|redirect recycling pty ltd|premier waste|wanless waste management - qld|any company)$/i;
 
@@ -222,7 +237,7 @@ export default async function handler(req, res) {
       const diff = g.price - nearest.price;
       const ratio = nearest.price > 0 ? g.price / nearest.price : 1;
       if (ratio > 3 || ratio < 0.34) { notComparable.push({ client: g.contact, kind: g.kind, xeroPrice: g.price, rateCardPrice: nearest.price, lines: g.lines, amount: Math.round(g.amount * 100) / 100, why: 'Billed as a lump sum or in a different unit' }); continue; }
-      if (Math.abs(diff) > Math.max(0.005, nearest.price * 0.005)) priceDiffs.push({ client: g.contact, kind: g.kind, service: nearest.name, serviceId: nearest.id, serviceUrl: serviceLink(nearest.id), xeroPrice: g.price, rateCardPrice: nearest.price, difference: Math.round(diff * 10000) / 10000, invoices: [...g.invoices].slice(0, 4), lines: g.lines, amount: Math.round(g.amount * 100) / 100 });
+      if (Math.abs(diff) > Math.max(0.005, nearest.price * 0.005)) priceDiffs.push({ client: g.contact, kind: g.kind, service: nearest.name, serviceId: nearest.id, serviceUrl: serviceLink(nearest.id), known: KNOWN_PRICE_DIFFS.has(`${nearest.id}|${g.price.toFixed(2)}`), xeroPrice: g.price, rateCardPrice: nearest.price, difference: Math.round(diff * 10000) / 10000, invoices: [...g.invoices].slice(0, 4), lines: g.lines, amount: Math.round(g.amount * 100) / 100 });
     }
 
     // ---------- the rate card on its own ----------
@@ -239,13 +254,13 @@ export default async function handler(req, res) {
       if (s.clientCompanies.every((c) => directionConflict(s.name, c))) linkProblems.push({ service: s.name, serviceId: s.id, serviceUrl: serviceLink(s.id), problem: `Linked to the wrong side: ${s.clientCompanies.join(' / ')}` });
     }
     const byAmount = (a, b) => (b.amount || 0) - (a.amount || 0);
-    noService.sort(byAmount); priceDiffs.sort(byAmount); adHoc.sort(byAmount); notComparable.sort(byAmount);
+    noService.sort(byAmount); priceDiffs.sort((a, b) => (a.known === b.known ? byAmount(a, b) : a.known ? 1 : -1)); adHoc.sort(byAmount); notComparable.sort(byAmount);
     belowCost.sort((a, b) => (a.known === b.known ? a.margin - b.margin : a.known ? 1 : -1));
     const unmatchedXero = [...unmatchedMap.values()].map((u) => ({ ...u, amount: Math.round(u.amount * 100) / 100 })).sort(byAmount);
 
     return res.status(200).json({
       status: 'ok', asAt: now.toISOString(), month: monthKey, from, to, xeroLines: xrows.length, activeServices: services.length,
-      counts: { noService: noService.length, priceDiffs: priceDiffs.length, belowCostNew: belowCost.filter((b) => !b.known).length, belowCostKnown: belowCost.filter((b) => b.known).length, linkProblems: linkProblems.length, unmatchedXero: unmatchedXero.length, adHoc: adHoc.length, notComparable: notComparable.length },
+      counts: { noService: noService.length, priceDiffs: priceDiffs.filter((p) => !p.known).length, priceDiffsKnown: priceDiffs.filter((p) => p.known).length, belowCostNew: belowCost.filter((b) => !b.known).length, belowCostKnown: belowCost.filter((b) => b.known).length, linkProblems: linkProblems.length, unmatchedXero: unmatchedXero.length, adHoc: adHoc.length, notComparable: notComparable.length },
       noService, priceDiffs, belowCost, linkProblems, unmatchedXero, adHoc, notComparable,
       note: 'Every priced Xero line for the month is checked against the active services on the right client. "Known" below-cost items are the ones John has accepted at James\'s price; anything new shows without that mark.',
     });
