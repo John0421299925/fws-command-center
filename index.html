@@ -1,5 +1,13 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.50 — 11 Oct 2026
+     v1.50: NEW — KNOWN PRICE DIFFERENCES. John, looking at the August view:
+       six explained price differences (Richmond Mall's old pricing, two of
+       James's one-off slips, one empty co-mingle line) kept showing. They
+       are now listed in their own table, "Xero price differs from the rate
+       card: known", under the new ones, and the heading counts only the
+       NEW ones ("N to look at, M known" includes them in "known"). Data from
+       rate-card-audit.js v1.4. Only the audit tables changed.
      v1.49 — 11 Oct 2026
      v1.49: NEW — a MONTH SWITCH on the "Things that don't add up" report.
        John asked why the report still showed 13 price differences after the
@@ -2796,7 +2804,7 @@
         const label = monthNames[Number(d.month.slice(5, 7)) - 1] + ' ' + d.month.slice(0, 4);
         const look = c.noService + c.priceDiffs + c.belowCostNew + c.linkProblems + c.unmatchedXero;
         const fix = c.noService + c.linkProblems + c.unmatchedXero;
-        summary.textContent = `Things that don't add up, ${label}: ${look} to look at` + (c.belowCostKnown ? `, ${c.belowCostKnown} known` : '');
+        summary.textContent = `Things that don't add up, ${label}: ${look} to look at` + ((c.belowCostKnown || 0) + (c.priceDiffsKnown || 0) ? `, ${(c.belowCostKnown || 0) + (c.priceDiffsKnown || 0)} known` : '');
         summary.style.color = fix > 0 ? 'var(--error)' : '';
         const table = (title, note, head, rows) => rows.length === 0 ? '' : `
           <h4 style="margin:14px 0 4px; font-size:13px; color:var(--text)">${esc(title)} (${rows.length})</h4>
@@ -2810,8 +2818,11 @@
           d.linkProblems.map(r => `<tr class="risk">${td(link(r.service, r.serviceUrl, 'Open this service in HubSpot'))}${td(esc(r.problem))}</tr>`));
         html += table('Xero clients not in HubSpot', 'James billed a client the rate card does not know.', ['Xero client', 'Lines', 'Amount'],
           d.unmatchedXero.map(r => `<tr class="risk">${td(esc(r.contact))}${td(r.lines)}${td(money(r.amount), 'num')}</tr>`));
-        html += table('Xero price differs from the rate card', 'The price on the Xero line (James\'s own, or a system draft he has authorised) against the nearest rate card price. The invoice shows where it came from.', ['Client', 'Charge', 'Xero price', 'Rate card', 'Difference', 'Lines', 'Amount', 'Invoice'],
-          d.priceDiffs.map(r => `<tr class="hold">${td(esc(r.client))}${td(link(r.kind, r.serviceUrl, r.service))}${td(price(r.xeroPrice))}${td(price(r.rateCardPrice))}${td((r.difference > 0 ? '+' : '') + price(r.difference).replace('$-', '-$'))}${td(r.lines)}${td(money(r.amount), 'num')}${td(esc((r.invoices || []).join(', ')))}</tr>`));
+        const pdNew = d.priceDiffs.filter(r => !r.known), pdKnown = d.priceDiffs.filter(r => r.known);
+        const pdRow = (r, cls) => `<tr class="${cls}">${td(esc(r.client))}${td(link(r.kind, r.serviceUrl, r.service))}${td(price(r.xeroPrice))}${td(price(r.rateCardPrice))}${td((r.difference > 0 ? '+' : '') + price(r.difference).replace('$-', '-$'))}${td(r.lines)}${td(money(r.amount), 'num')}${td(esc((r.invoices || []).join(', ')))}</tr>`;
+        const pdHead = ['Client', 'Charge', 'Xero price', 'Rate card', 'Difference', 'Lines', 'Amount', 'Invoice'];
+        html += table('Xero price differs from the rate card', 'The price on the Xero line (James\'s own, or a system draft he has authorised) against the nearest rate card price. The invoice shows where it came from.', pdHead, pdNew.map(r => pdRow(r, 'hold')));
+        html += table('Xero price differs from the rate card: known', 'Explained and accepted: one-off slips, or an old arrangement. Still shown so nothing is hidden.', pdHead, pdKnown.map(r => pdRow(r, '')));
         const newBc = d.belowCost.filter(b => !b.known), knownBc = d.belowCost.filter(b => b.known);
         const bcRow = (b, cls) => `<tr class="${cls}">${td(link(b.service, b.serviceUrl, 'Open this service in HubSpot'))}${td(b.kind === 'below cost' ? 'Below cost' : 'Thin')}${td(price(b.cost))}${td(price(b.price))}${td(b.margin + '%')}</tr>`;
         html += table('Rate card prices at or below cost: NEW', 'Not yet accepted.', ['Service', 'What', 'Our cost', 'Price', 'Margin'], newBc.map(b => bcRow(b, 'hold')));
