@@ -1,5 +1,19 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.52 — 11 Oct 2026
+     v1.52: NEW — REVENUE IS FLUORESCENT BLUE, MARGIN IS FLUORESCENT PINK.
+       John's request, agreed with Claude: each measure gets its own colour so
+       the page scans quickly, and they stay clear of the status colours
+       (green = known / safe, amber = new, red = needs fixing). Blue is
+       #00b7ff and pink is the magenta-pink #ff2bd6, chosen so it cannot be
+       mistaken for the status red. Applied to: the admin Revenue card and
+       Blended margin card; the sales view's My revenue card (was yellow, v1.23)
+       and My blended margin card (was red, v1.23), which John's new request
+       replaces; the titles of "Revenue by client & waste type" and "Margin by
+       client"; and the Revenue and Margin figures inside those two tables.
+       The yellow "Invoices awaiting approval" card is unchanged (yellow still
+       means invoices). A flagged admin card still shows its warning colour.
+       Colours only; no data or logic changed.
      v1.51 — 11 Oct 2026
      v1.51: NEW — KNOWN items are fluorescent green (meaning safe) on the
        "Things that don't add up" report. John's request: everything accepted
@@ -459,6 +473,8 @@
       --quote-green: #39ff14;
       --invoice-yellow: #eaff00;
       --margin-red: #ff073a;
+      --revenue-blue: #00b7ff;   /* v1.52: Revenue is fluorescent blue */
+      --margin-pink: #ff2bd6;    /* v1.52: Margin is fluorescent pink (magenta-pink, not the status red) */
       --company-blue: #3b82f6;
     }
     * { box-sizing: border-box; }
@@ -708,14 +724,24 @@
        John's explicit request, same glow treatment as the yellow
        Invoices card and green Quotations card so all three read as
        distinct, deliberately eye-catching categories. */
-    .vital-card.margin-vital {
+    .vital-card.margin-vital {   /* v1.52: now fluorescent PINK (was red), the colour of Margin everywhere */
       background: var(--card-bg);
-      border: 1px solid var(--margin-red);
-      box-shadow: 0 0 12px rgba(255,7,58,0.35);
+      border: 1px solid var(--margin-pink);
+      box-shadow: 0 0 12px rgba(255,43,214,0.35);
     }
-    .vital-card.margin-vital .label { color: var(--margin-red); }
-    .vital-card.margin-vital .value { color: var(--margin-red); }
-    .vital-card.margin-vital .sub { color: var(--margin-red); }
+    .vital-card.margin-vital .label { color: var(--margin-pink); }
+    .vital-card.margin-vital .value { color: var(--margin-pink); }
+    .vital-card.margin-vital .sub { color: var(--margin-pink); }
+    .vital-card.revenue-vital {  /* v1.52: Revenue is fluorescent BLUE */
+      background: var(--card-bg);
+      border: 1px solid var(--revenue-blue);
+      box-shadow: 0 0 12px rgba(0,183,255,0.35);
+    }
+    .vital-card.revenue-vital .label { color: var(--revenue-blue); }
+    .vital-card.revenue-vital .value { color: var(--revenue-blue); }
+    .vital-card.revenue-vital .sub { color: var(--revenue-blue); }
+    .drilldown summary.revenue-title, .drilldown th.rev, .drilldown td.rev { color: var(--revenue-blue); }
+    .drilldown summary.margin-title, .drilldown th.mar, .drilldown td.mar { color: var(--margin-pink); }
     /* v1.23: Prospect Value Calculator — company blue border/glow,
        John's explicit request, same visual language as the other
        highlighted sections on this page. */
@@ -1087,12 +1113,12 @@
     </div>
 
     <details class="drilldown">
-      <summary>Margin by client</summary>
+      <summary class="margin-title">Margin by client</summary>
       <table id="margin-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
     </details>
 
     <details class="drilldown">
-      <summary>Revenue by client &amp; waste type</summary>
+      <summary class="revenue-title">Revenue by client &amp; waste type</summary>
       <table id="revenue-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
     </details>
 
@@ -2130,9 +2156,9 @@
       // card, rather than conditionally switching to a "flagged"
       // style. Index 2 (Quotes) stays green as before.
       if (index === 0) {
-        card.className = 'vital-card invoice-vital';
+        card.className = 'vital-card revenue-vital';   // v1.52: My revenue is fluorescent blue (was yellow)
       } else if (index === 1) {
-        card.className = 'vital-card margin-vital';
+        card.className = 'vital-card margin-vital';    // pink since v1.52 (was red)
       } else if (index === 2) {
         card.className = 'vital-card quote-vital';
       } else {
@@ -2379,7 +2405,7 @@
       } else if (isAwaitingApprovalCard) {
         card.className = 'vital-card invoice-vital';
       } else {
-        card.className = 'vital-card' + (flagClass ? ' ' + flagClass : '');
+        card.className = 'vital-card' + (flagClass ? ' ' + flagClass : (index === 0 ? ' revenue-vital' : index === 2 ? ' margin-vital' : ''));   // v1.52: Revenue blue, Margin pink unless flagged
       }
       card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
     }
@@ -2506,13 +2532,13 @@
         const marginTable = document.getElementById('margin-table');
         if (marginRes.status === 'ok' && marginRes.clients.length > 0) {
           marginTable.innerHTML = `
-            <thead><tr><th>Client</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Data quality</th></tr></thead>
+            <thead><tr><th>Client</th><th class="rev">Revenue</th><th>Cost</th><th class="mar">Margin</th><th>Data quality</th></tr></thead>
             <tbody>${marginRes.clients.map(c => `
               <tr class="${c.belowTarget ? 'risk' : ''}">
                 <td>${c.name}</td>
-                <td class="num">${money(c.revenue)}</td>
+                <td class="num rev">${money(c.revenue)}</td>
                 <td class="num">${money(c.cost)}</td>
-                <td class="num">${c.marginPercent !== null ? c.marginPercent + '%' : '—'}</td>
+                <td class="num mar">${c.marginPercent !== null ? c.marginPercent + '%' : '—'}</td>
                 <td class="num">${c.costDataCoveragePercent}%</td>
               </tr>`).join('')}</tbody>`;
         } else {
@@ -2523,12 +2549,12 @@
         if (revenueRes.status === 'ok' && revenueRes.clients.length > 0) {
           const clientRows = revenueRes.clients.map(c => `
             <tr class="${c.concentrationRisk ? 'risk' : ''}">
-              <td>${c.name}</td><td class="num">${money(c.revenue)}</td><td class="num">${c.percentOfTotal}%</td>
+              <td>${c.name}</td><td class="num rev">${money(c.revenue)}</td><td class="num">${c.percentOfTotal}%</td>
             </tr>`).join('');
           const wasteRows = (revenueRes.revenueByWasteType || []).map(w => `
-            <tr><td>${w.wasteType}</td><td class="num">${money(w.revenue)}</td><td class="num">${w.percentOfTotal}%</td></tr>`).join('');
+            <tr><td>${w.wasteType}</td><td class="num rev">${money(w.revenue)}</td><td class="num">${w.percentOfTotal}%</td></tr>`).join('');
           revenueTable.innerHTML = `
-            <thead><tr><th>Client</th><th>Revenue</th><th>% of total</th></tr></thead>
+            <thead><tr><th>Client</th><th class="rev">Revenue</th><th>% of total</th></tr></thead>
             <tbody>${clientRows}</tbody>
             <thead><tr><th colspan="3" style="padding-top:16px">By waste type</th></tr></thead>
             <tbody>${wasteRows}</tbody>`;
