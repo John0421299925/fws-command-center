@@ -20,7 +20,9 @@
 //   linkProblems   services linked to a supplier only (no client), or to the wrong
 //                  side (north/south, east/west)
 //   unmatchedXero  a Xero client with no match in HubSpot (a client James bills that
-//                  the rate card does not know about)
+//                  the rate card does not know about). A Xero contact the system created
+//                  carries the HubSpot company name exactly, so it is matched directly;
+//                  CONTACT_MAP is for the legal-entity names James uses
 //   adHoc          one-off charges with no service type (listed, not a fault)
 //   notComparable  lines billed as a lump sum or in a different unit from the rate card
 //                  (CLV, Glenthorne, the Pheasant Nest flat grease price): listed, not a fault
@@ -66,7 +68,8 @@ function lineKind(d) {
   if (/excess/.test(d)) return 'excess weight';
   if (/deliver/.test(d)) return 'delivery';
   if (/organic|orgain/.test(d)) return 'organic';
-  if (/grease|sludge|septic|effluent|\bpits?\b|\bdaf\b|\btank|pump/.test(d)) return 'grease / liquid';
+  if (/booking|docket/.test(d)) return 'transport / hook lift';   // a pump-out booking fee is the transport, not the waste
+  if (/grease|sludge|septic|effluent|\bpits?\b|\bdaf\b|\btank|pump|\d\s*lt\b/.test(d)) return 'grease / liquid';   // "19,300 LT" is litres
   if (/cardboard|paper|\bpac\b|recycl|co.?mingle|comingle/.test(d)) return 'recycling';
   if (/rental|\brent\b|hire/.test(d)) return 'bin rental';
   if (/labou?r/.test(d)) return 'labour';
@@ -150,12 +153,15 @@ export default async function handler(req, res) {
     const services = (await loadServices()).filter((s) => s.status === 'Active');
 
     // ---------- the Xero half against the rate card ----------
-    const noService = []; const priceDiffs = []; const adHoc = []; const notComparable = []; const unmatchedMap = new Map();
+    const noService = []; const priceDiffs = []; const adHoc = []; const notComparable = [];
+    const norm = (v) => String(v || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const clientNames = new Map();   // normalised HubSpot client company name -> escaped pattern
+    for (const sv of services) for (const cn of sv.clientCompanies) clientNames.set(norm(cn), norm(cn).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); const unmatchedMap = new Map();
     const groups = new Map();   // company pattern || kind || price -> lines
     for (const r of xrows) {
       const contact = String(r.Contact || ''); const lc = contact.toLowerCase();
       if (IGNORE_CONTACTS.test(contact)) continue;
-      const hit = CONTACT_MAP.find(([cp]) => new RegExp(cp).test(lc));
+      const hit = CONTACT_MAP.find(([cp]) => new RegExp(cp).test(lc)) || (clientNames.has(norm(contact)) ? [null, clientNames.get(norm(contact))] : null);
       if (!hit) { const u = unmatchedMap.get(contact) || { contact, lines: 0, amount: 0 }; u.lines++; u.amount += Number(r.LineAmount) || 0; unmatchedMap.set(contact, u); continue; }
       const kind = lineKind(String(r.LineDescription || '').toLowerCase());
       const k = `${hit[1]}||${kind}||${Number(r.UnitAmount).toFixed(4)}`;
