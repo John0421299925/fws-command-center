@@ -1,5 +1,17 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.54 — 11 Oct 2026
+     v1.54: NEW — PAYABLES IS FLUORESCENT PURPLE (#b24bff). John asked what to
+       do with Payables; agreed: its own colour, clear of blue (Revenue), pink
+       (Margin), green (known), yellow (Invoices) and the amber / red status
+       colours (orange was rejected because Receivables turns amber).
+       Applied to the Payables card (always purple; the "cost recorded on N%
+       of revenue" warning, shown when under 90%, is now amber words inside
+       the card, as v1.53 did for Margin), the titles of both Payables
+       drill-downs, and their money columns. In the "Payables by supplier
+       (HubSpot)" table the Revenue billed column is blue and the Margin column
+       pink, following the same convention. Receivables is unchanged (its colour
+       is a status). Colours and wording only.
      v1.53 — 11 Oct 2026
      v1.53: FIX — the top Margin card was still red. A card with a "flagged"
        status takes the warning colour, and the Blended margin card is flagged
@@ -485,6 +497,7 @@
       --margin-red: #ff073a;
       --revenue-blue: #00b7ff;   /* v1.52: Revenue is fluorescent blue */
       --margin-pink: #ff2bd6;    /* v1.52: Margin is fluorescent pink (magenta-pink, not the status red) */
+      --payables-purple: #b24bff; /* v1.54: Payables is fluorescent purple */
       --company-blue: #3b82f6;
     }
     * { box-sizing: border-box; }
@@ -750,6 +763,15 @@
     .vital-card.revenue-vital .label { color: var(--revenue-blue); }
     .vital-card.revenue-vital .value { color: var(--revenue-blue); }
     .vital-card.revenue-vital .sub { color: var(--revenue-blue); }
+    .vital-card.payables-vital {  /* v1.54: Payables is fluorescent PURPLE */
+      background: var(--card-bg);
+      border: 1px solid var(--payables-purple);
+      box-shadow: 0 0 12px rgba(178,75,255,0.35);
+    }
+    .vital-card.payables-vital .label { color: var(--payables-purple); }
+    .vital-card.payables-vital .value { color: var(--payables-purple); }
+    .vital-card.payables-vital .sub { color: var(--payables-purple); }
+    .drilldown summary.payables-title, .drilldown th.pay, .drilldown td.pay { color: var(--payables-purple); }
     .drilldown summary.revenue-title, .drilldown th.rev, .drilldown td.rev { color: var(--revenue-blue); }
     .drilldown summary.margin-title, .drilldown th.mar, .drilldown td.mar { color: var(--margin-pink); }
     /* v1.23: Prospect Value Calculator — company blue border/glow,
@@ -1137,7 +1159,7 @@
          onSupplierPayablesToggle). Deliberately named "(HubSpot)" so it
          is never confused with the Xero "(aging)" one further down. -->
     <details class="drilldown" id="supplier-payables-details" ontoggle="onSupplierPayablesToggle(this)">
-      <summary>Payables by supplier (HubSpot — what suppliers billed us)</summary>
+      <summary class="payables-title">Payables by supplier (HubSpot — what suppliers billed us)</summary>
       <table id="supplier-payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Open to load…</td></tr></tbody></table>
       <div class="vital-signs-note" id="supplier-payables-note" style="margin:0; padding:10px 16px 14px;"></div>
     </details>
@@ -1148,7 +1170,7 @@
     </details>
 
     <details class="drilldown">
-      <summary>Payables by supplier (aging)</summary>
+      <summary class="payables-title">Payables by supplier (aging)</summary>
       <table id="payables-table"><tbody><tr><td style="padding:16px; color:var(--muted)">Loading…</td></tr></tbody></table>
     </details>
 
@@ -2415,7 +2437,7 @@
       } else if (isAwaitingApprovalCard) {
         card.className = 'vital-card invoice-vital';
       } else {
-        card.className = 'vital-card' + (index === 0 ? ' revenue-vital' : index === 2 ? ' margin-vital' : (flagClass ? ' ' + flagClass : ''));   // v1.53: Revenue blue and Margin pink ALWAYS (a flag no longer overrides them)
+        card.className = 'vital-card' + (index === 0 ? ' revenue-vital' : index === 1 ? ' payables-vital' : index === 2 ? ' margin-vital' : (flagClass ? ' ' + flagClass : ''));   // v1.53/v1.54: Revenue blue, Payables purple and Margin pink ALWAYS (a flag no longer overrides them)
       }
       card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
     }
@@ -2471,7 +2493,7 @@
           const costedRevenue = marginRes.clients.reduce((s, c) => s + (c.revenue || 0) * ((c.costDataCoveragePercent == null ? 100 : c.costDataCoveragePercent) / 100), 0);
           const coveragePercent = totalRevenueForCoverage > 0 ? Math.round((costedRevenue / totalRevenueForCoverage) * 100) : 100;
           const payablesSub = `supplier invoices via HubSpot · ${marginRes.periodLabel}`
-            + (coveragePercent < 100 ? ` · cost recorded on ${coveragePercent}% of revenue` : '');
+            + (coveragePercent < 100 ? ` · ${coveragePercent < 90 ? '<span style="color:var(--unknown)">' : ''}cost recorded on ${coveragePercent}% of revenue${coveragePercent < 90 ? '</span>' : ''}` : '');   // v1.54: under 90% is amber words inside the purple card
           setVitalCard(1, `Payables, ${marginRes.periodLabel}`, money(totalPayables), payablesSub,
             coveragePercent < 90 ? 'warning' : null);
           lastPayablesCardTotal = totalPayables;   // v1.39: the drill-down below checks itself against this
@@ -2604,17 +2626,17 @@
           // uses payablesRes.totalOwing (already calculated by
           // ap-aging.js) rather than re-summing client-side.
           payablesTable.innerHTML = `
-            <thead><tr><th>Supplier (as recorded in Xero)</th><th>Amount owing</th><th>% of payables</th><th>Oldest (days)</th></tr></thead>
+            <thead><tr><th>Supplier (as recorded in Xero)</th><th class="pay">Amount owing</th><th>% of payables</th><th>Oldest (days)</th></tr></thead>
             <tbody>${payablesRes.suppliers.map(s => `
               <tr class="${s.concentrationNote ? 'risk' : ''}">
                 <td>${s.name}</td>
-                <td class="num">${money(s.amountOwing)}</td>
+                <td class="num pay">${money(s.amountOwing)}</td>
                 <td class="num">${s.percentOfTotalPayables}%</td>
                 <td class="num">${s.oldestDaysOverdue}</td>
               </tr>`).join('')}
               <tr class="total-row">
                 <td>Total</td>
-                <td class="num">${money(payablesRes.totalOwing)}</td>
+                <td class="num pay">${money(payablesRes.totalOwing)}</td>
                 <td class="num">100%</td>
                 <td></td>
               </tr>
@@ -2724,22 +2746,22 @@
 
         const blended = data.totalRevenue > 0 ? (((data.totalRevenue - data.totalPayables) / data.totalRevenue) * 100).toFixed(1) + '%' : '—';
         table.innerHTML = `
-          <thead><tr><th>Supplier</th><th>Payables</th><th>% of payables</th><th>Revenue billed</th><th>Margin</th><th>Invoices</th></tr></thead>
+          <thead><tr><th>Supplier</th><th class="pay">Payables</th><th>% of payables</th><th class="rev">Revenue billed</th><th class="mar">Margin</th><th>Invoices</th></tr></thead>
           <tbody>${data.suppliers.map(s => `
             <tr class="${s.isUnknown ? 'risk' : ''}">
               <td>${esc(s.name)}</td>
-              <td class="num">${money(s.payables)}</td>
+              <td class="num pay">${money(s.payables)}</td>
               <td class="num">${s.percentOfTotal}%</td>
-              <td class="num">${money(s.revenue)}</td>
-              <td class="num">${s.marginPercent !== null ? s.marginPercent + '%' : '—'}</td>
+              <td class="num rev">${money(s.revenue)}</td>
+              <td class="num mar">${s.marginPercent !== null ? s.marginPercent + '%' : '—'}</td>
               <td class="num">${s.invoiceCount}</td>
             </tr>`).join('')}
             <tr class="total-row">
               <td>Total</td>
-              <td class="num">${money(data.totalPayables)}</td>
+              <td class="num pay">${money(data.totalPayables)}</td>
               <td class="num">100%</td>
-              <td class="num">${money(data.totalRevenue)}</td>
-              <td class="num">${blended}</td>
+              <td class="num rev">${money(data.totalRevenue)}</td>
+              <td class="num mar">${blended}</td>
               <td class="num">${data.invoiceCount}</td>
             </tr>
           </tbody>`;
