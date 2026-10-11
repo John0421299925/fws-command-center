@@ -1,5 +1,12 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.51 — 11 Oct 2026
+     v1.51: NEW — KNOWN items are fluorescent green (meaning safe) on the
+       "Things that don't add up" report. John's request: everything accepted
+       or explained stands out as safe, so the eye goes straight to what is
+       not. The known rows (below-cost and price differences), the titles of
+       the known tables, and the "N known" in the heading are #39ff14.
+       Colours only; no data or logic changed.
      v1.50 — 11 Oct 2026
      v1.50: NEW — KNOWN PRICE DIFFERENCES. John, looking at the August view:
        six explained price differences (Richmond Mall's old pricing, two of
@@ -882,6 +889,7 @@
     .drilldown td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .drilldown tr.risk td:first-child { color: var(--error); font-weight: 500; }
     .drilldown tr.hold td:first-child { color: var(--unknown); font-weight: 500; }   /* v1.45: amber, held for review */
+    .drilldown tr.known td, .drilldown tr.known td a { color: #39ff14; }                /* v1.51: fluorescent green = known, safe */
     /* v1.26: total row at the bottom of a drill-down table — bolder
        text and a slightly heavier top border than a normal data row,
        so it reads clearly as a sum rather than just another entry. */
@@ -2804,10 +2812,11 @@
         const label = monthNames[Number(d.month.slice(5, 7)) - 1] + ' ' + d.month.slice(0, 4);
         const look = c.noService + c.priceDiffs + c.belowCostNew + c.linkProblems + c.unmatchedXero;
         const fix = c.noService + c.linkProblems + c.unmatchedXero;
-        summary.textContent = `Things that don't add up, ${label}: ${look} to look at` + ((c.belowCostKnown || 0) + (c.priceDiffsKnown || 0) ? `, ${(c.belowCostKnown || 0) + (c.priceDiffsKnown || 0)} known` : '');
+        const knownCount = (c.belowCostKnown || 0) + (c.priceDiffsKnown || 0);
+        summary.innerHTML = `Things that don't add up, ${esc(label)}: ${look} to look at` + (knownCount ? `, <span style="color:#39ff14">${knownCount} known</span>` : '');
         summary.style.color = fix > 0 ? 'var(--error)' : '';
         const table = (title, note, head, rows) => rows.length === 0 ? '' : `
-          <h4 style="margin:14px 0 4px; font-size:13px; color:var(--text)">${esc(title)} (${rows.length})</h4>
+          <h4 style="margin:14px 0 4px; font-size:13px; color:${/: known/.test(title) ? '#39ff14' : 'var(--text)'}">${esc(title)} (${rows.length})</h4>
           ${note ? `<div style="margin:0 0 6px; font-size:12px; color:var(--muted)">${esc(note)}</div>` : ''}
           <table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
         const td = (v, cls) => `<td${cls ? ` class="${cls}"` : ''}>${v}</td>`;
@@ -2822,11 +2831,11 @@
         const pdRow = (r, cls) => `<tr class="${cls}">${td(esc(r.client))}${td(link(r.kind, r.serviceUrl, r.service))}${td(price(r.xeroPrice))}${td(price(r.rateCardPrice))}${td((r.difference > 0 ? '+' : '') + price(r.difference).replace('$-', '-$'))}${td(r.lines)}${td(money(r.amount), 'num')}${td(esc((r.invoices || []).join(', ')))}</tr>`;
         const pdHead = ['Client', 'Charge', 'Xero price', 'Rate card', 'Difference', 'Lines', 'Amount', 'Invoice'];
         html += table('Xero price differs from the rate card', 'The price on the Xero line (James\'s own, or a system draft he has authorised) against the nearest rate card price. The invoice shows where it came from.', pdHead, pdNew.map(r => pdRow(r, 'hold')));
-        html += table('Xero price differs from the rate card: known', 'Explained and accepted: one-off slips, or an old arrangement. Still shown so nothing is hidden.', pdHead, pdKnown.map(r => pdRow(r, '')));
+        html += table('Xero price differs from the rate card: known', 'Explained and accepted: one-off slips, or an old arrangement. Still shown so nothing is hidden.', pdHead, pdKnown.map(r => pdRow(r, 'known')));
         const newBc = d.belowCost.filter(b => !b.known), knownBc = d.belowCost.filter(b => b.known);
         const bcRow = (b, cls) => `<tr class="${cls}">${td(link(b.service, b.serviceUrl, 'Open this service in HubSpot'))}${td(b.kind === 'below cost' ? 'Below cost' : 'Thin')}${td(price(b.cost))}${td(price(b.price))}${td(b.margin + '%')}</tr>`;
         html += table('Rate card prices at or below cost: NEW', 'Not yet accepted.', ['Service', 'What', 'Our cost', 'Price', 'Margin'], newBc.map(b => bcRow(b, 'hold')));
-        html += table('Rate card prices at or below cost: known', "Accepted at James's price.", ['Service', 'What', 'Our cost', 'Price', 'Margin'], knownBc.map(b => bcRow(b, '')));
+        html += table('Rate card prices at or below cost: known', "Accepted at James's price.", ['Service', 'What', 'Our cost', 'Price', 'Margin'], knownBc.map(b => bcRow(b, 'known')));
         html += table('Lump sums and one-offs (not faults)', 'Lines that cannot be compared with a per-unit service.', ['Client', 'Charge', 'Amount'],
           [...d.notComparable.map(r => `<tr>${td(esc(r.client))}${td(esc(r.kind) + ' (lump sum)')}${td(money(r.amount), 'num')}</tr>`), ...d.adHoc.map(r => `<tr>${td(esc(r.client))}${td(esc(r.charge))}${td(money(r.amount), 'num')}</tr>`)]);
         if (!html) html = '<span style="color:var(--muted)">Everything adds up for ' + esc(label) + '.</span>';
