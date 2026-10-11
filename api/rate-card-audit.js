@@ -2,9 +2,24 @@
 // FWS Command Center — "Things that don't add up" (rate card audit)
 // Deploy as: api/rate-card-audit.js
 // ================================================================
-// Version: v1.0
+// Version: v1.1
 //
-// PURPOSE: John, 11 Oct 2026: it is not enough to fix the rate card once; next
+// v1.1: fixes found on the first real September run (11 Oct 2026), all in how
+// Xero lines are sorted so the report stops showing things that are not faults:
+//   - A litre line such as "Disposal Charge 19300 LT" is now a LIQUID charge. It was being
+//     read as general waste and compared with the $143.77 bin price, which made
+//     JR Richards' per-litre pump-out lines show up as lump sums.
+//   - A pump-out BOOKING FEE (or "docket") is now TRANSPORT, not a liquid charge, so the
+//     $635.25 booking fee is compared with the transport service.
+//   - "GT" lines (e.g. "Centre GT#4 (GT Room)") are grease traps, not one-offs.
+//   - A Xero contact the SYSTEM created carries the HubSpot company name exactly, so it is
+//     now matched to its company directly. Fairfield, Borger McDougalls Hill and Freddy
+//     no longer appear as "Xero clients not in HubSpot". CONTACT_MAP is only needed for
+//     the legal-entity names James uses.
+//   - Pheasant Nest South transport ($550, equal to JR Richards' cost) added to
+//     KNOWN_BELOW_COST: accepted at cost by John, so it is not reported as new.
+//
+// v1.0: first release. PURPOSE: John, 11 Oct 2026: it is not enough to fix the rate card once; next
 // month and the months after must not go the same way, and he must not have to
 // download files or open web addresses to find out. This runs the check by
 // itself and the dashboard shows the result. It puts two things side by side:
@@ -57,7 +72,9 @@ const IGNORE_CONTACTS = /r(ö|o)hlig/i;
 const KNOWN_BELOW_COST = new Set(['683982006750', '727919516129', '704835596747', '692658275784', '688560920000', '688524675577', '694431169003', '694524729842', '688677334463',
   '690476456384', '690767217087', '690476467667', '690457834967',
   // thin (under 5%) but James's own prices, accepted 11 Oct 2026
-  '695494965711', '694893534664', '688677334509', '634052641272', '694108818878', '696547167700']);
+  '695494965711', '694893534664', '688677334509', '634052641272', '694108818878', '696547167700',
+  // Pheasant Nest South transport set to $550, equal to JR Richards' cost: accepted at cost, 11 Oct 2026
+  '684972249575']);
 
 const SUPPLIER_NAMES = /^(bingo industries|remondis australia pty ltd|hlw group|jr richards|waste free \(aust\) pty ltd|power waste management pty ltd|redirect recycling pty ltd|premier waste|wanless waste management - qld|any company)$/i;
 
@@ -69,7 +86,7 @@ function lineKind(d) {
   if (/deliver/.test(d)) return 'delivery';
   if (/organic|orgain/.test(d)) return 'organic';
   if (/booking|docket/.test(d)) return 'transport / hook lift';   // a pump-out booking fee is the transport, not the waste
-  if (/grease|sludge|septic|effluent|\bpits?\b|\bdaf\b|\btank|pump|\d\s*lt\b/.test(d)) return 'grease / liquid';   // "19,300 LT" is litres
+  if (/grease|sludge|septic|effluent|\bpits?\b|\bdaf\b|\btank|pump|\d\s*lt\b|\bgt\b/.test(d)) return 'grease / liquid';   // "19,300 LT" is litres
   if (/cardboard|paper|\bpac\b|recycl|co.?mingle|comingle/.test(d)) return 'recycling';
   if (/rental|\brent\b|hire/.test(d)) return 'bin rental';
   if (/labou?r/.test(d)) return 'labour';
