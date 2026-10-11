@@ -1,5 +1,17 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.46 — 11 Oct 2026
+     v1.46: NEW — "Things that don't add up": the monthly rate card audit, on the
+       dashboard, so nobody has to download files or open web addresses. It
+       checks every priced line James billed in Xero last month against the
+       services on the right client in HubSpot and lists: charges with no
+       service on the rate card, prices that differ from the rate card, rate
+       card prices at or below cost (known ones marked, so only NEW ones need
+       attention), services linked to the wrong client, Xero clients not in
+       HubSpot, and the one-off / lump-sum lines that cannot be compared.
+       The heading shows the count of things to look at and turns red when
+       something needs fixing. Admin only; refreshed every 6 hours. Data
+       comes from api/rate-card-audit.js (new). Nothing else changed.
      v1.45 — 10 Oct 2026
      v1.45: FIX — "Invoices still to come" no longer calls a HELD invoice
        missing. John: it said 4 likely missing and one was Fairfield Forum,
@@ -1014,6 +1026,13 @@
       <div class="vital-signs-note" id="missing-invoices-note" style="margin:0; padding:10px 16px 14px;"></div>
     </details>
 
+    <!-- v1.46: Things that don't add up (monthly rate card audit). Loaded on its own,
+         last month by default. -->
+    <details class="drilldown" id="audit-details">
+      <summary id="audit-summary">Things that don't add up (loading…)</summary>
+      <div id="audit-body" style="padding:12px 16px 14px; color:var(--muted)">Loading…</div>
+    </details>
+
     <details class="drilldown">
         <summary>Deals by stage</summary>
         <div id="deals-by-stage-body" style="padding:16px;"><p style="color:var(--muted); margin:0;">Loading…</p></div>
@@ -1531,6 +1550,7 @@
         startStaggered(loadExceptions, 1200, 60000);
         startStaggered(loadDealsPipeline, 2400, 300000);
         startStaggered(loadMissingInvoices, 6000, 3600000);   // v1.43: after the others, hourly
+        startStaggered(loadAudit, 9000, 21600000);            // v1.46: the monthly rate card audit, every 6 hours
       } else {
         startStaggered(loadMySales, 0, 300000);
       }
@@ -2713,6 +2733,58 @@
         console.error('loadMissingInvoices failed:', err);
         summary.textContent = 'Invoices still to come (could not load)';
         table.innerHTML = '<tbody><tr><td style="padding:16px; color:var(--muted)">Could not load.</td></tr></tbody>';
+      }
+    }
+
+    // v1.46: Things that don't add up. The monthly rate card audit for last month:
+    // Xero lines against HubSpot services, and the rate card on its own.
+    async function loadAudit() {
+      const summary = document.getElementById('audit-summary');
+      const body = document.getElementById('audit-body');
+      if (!summary || !body) return;
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const price = (n) => { const v = Number(n); if (!isFinite(v)) return '—'; const s = v < 10 ? v.toFixed(3).replace(/0$/, '') : v.toFixed(2); return '$' + s; };
+      try {
+        const res = await fetch('/api/rate-card-audit');
+        const d = await res.json();
+        if (d.status !== 'ok') {
+          summary.textContent = "Things that don't add up (could not load)";
+          summary.style.color = '';
+          body.innerHTML = '<span style="color:var(--muted)">Could not load: ' + esc(d.error || 'unknown error') + '</span>';
+          return;
+        }
+        const c = d.counts;
+        const label = monthNames[Number(d.month.slice(5, 7)) - 1] + ' ' + d.month.slice(0, 4);
+        const look = c.noService + c.priceDiffs + c.belowCostNew + c.linkProblems + c.unmatchedXero;
+        const fix = c.noService + c.linkProblems + c.unmatchedXero;
+        summary.textContent = `Things that don't add up, ${label}: ${look} to look at` + (c.belowCostKnown ? `, ${c.belowCostKnown} known` : '');
+        summary.style.color = fix > 0 ? 'var(--error)' : '';
+        const table = (title, note, head, rows) => rows.length === 0 ? '' : `
+          <h4 style="margin:14px 0 4px; font-size:13px; color:var(--text)">${esc(title)} (${rows.length})</h4>
+          ${note ? `<div style="margin:0 0 6px; font-size:12px; color:var(--muted)">${esc(note)}</div>` : ''}
+          <table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+        const td = (v, cls) => `<td${cls ? ` class="${cls}"` : ''}>${v}</td>`;
+        let html = '';
+        html += table('No service on the rate card', 'James billed this but the client has no active service for it.', ['Client', 'Charge', 'Lines', 'Amount', 'Price', 'Example'],
+          d.noService.map(r => `<tr class="risk">${td(esc(r.client))}${td(esc(r.kind))}${td(r.lines)}${td(money(r.amount), 'num')}${td(r.prices.map(price).join(', '))}${td(esc(r.example))}</tr>`));
+        html += table('Service links to fix', 'A service must be linked to the right client.', ['Service', 'Problem'],
+          d.linkProblems.map(r => `<tr class="risk">${td(esc(r.service))}${td(esc(r.problem))}</tr>`));
+        html += table('Xero clients not in HubSpot', 'James billed a client the rate card does not know.', ['Xero client', 'Lines', 'Amount'],
+          d.unmatchedXero.map(r => `<tr class="risk">${td(esc(r.contact))}${td(r.lines)}${td(money(r.amount), 'num')}</tr>`));
+        html += table("James's price differs from the rate card", 'The nearest rate card price for that charge.', ['Client', 'Charge', 'James', 'Rate card', 'Difference', 'Lines', 'Amount'],
+          d.priceDiffs.map(r => `<tr class="hold">${td(esc(r.client))}${td(esc(r.kind))}${td(price(r.xeroPrice))}${td(price(r.rateCardPrice))}${td((r.difference > 0 ? '+' : '') + price(r.difference).replace('$-', '-$'))}${td(r.lines)}${td(money(r.amount), 'num')}</tr>`));
+        const newBc = d.belowCost.filter(b => !b.known), knownBc = d.belowCost.filter(b => b.known);
+        const bcRow = (b, cls) => `<tr class="${cls}">${td(esc(b.service))}${td(b.kind === 'below cost' ? 'Below cost' : 'Thin')}${td(price(b.cost))}${td(price(b.price))}${td(b.margin + '%')}</tr>`;
+        html += table('Rate card prices at or below cost: NEW', 'Not yet accepted.', ['Service', 'What', 'Our cost', 'Price', 'Margin'], newBc.map(b => bcRow(b, 'hold')));
+        html += table('Rate card prices at or below cost: known', "Accepted at James's price.", ['Service', 'What', 'Our cost', 'Price', 'Margin'], knownBc.map(b => bcRow(b, '')));
+        html += table('Lump sums and one-offs (not faults)', 'Lines that cannot be compared with a per-unit service.', ['Client', 'Charge', 'Amount'],
+          [...d.notComparable.map(r => `<tr>${td(esc(r.client))}${td(esc(r.kind) + ' (lump sum)')}${td(money(r.amount), 'num')}</tr>`), ...d.adHoc.map(r => `<tr>${td(esc(r.client))}${td(esc(r.charge))}${td(money(r.amount), 'num')}</tr>`)]);
+        if (!html) html = '<span style="color:var(--muted)">Everything adds up for ' + esc(label) + '.</span>';
+        body.innerHTML = `<div style="margin-bottom:6px; font-size:12px; color:var(--muted)">Checked ${d.xeroLines} Xero lines for ${esc(label)} against ${d.activeServices} active services.</div>` + html;
+      } catch (err) {
+        console.error('loadAudit failed:', err);
+        summary.textContent = "Things that don't add up (could not load)";
+        body.innerHTML = '<span style="color:var(--muted)">Could not load.</span>';
       }
     }
   </script>
