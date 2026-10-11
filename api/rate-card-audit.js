@@ -2,7 +2,14 @@
 // FWS Command Center — "Things that don't add up" (rate card audit)
 // Deploy as: api/rate-card-audit.js
 // ================================================================
-// Version: v1.1
+// Version: v1.2
+//
+// v1.2: DRILL-DOWN. John, 11 Oct 2026: he wants to click from the report into HubSpot.
+// Every line that is about a service now carries serviceUrl (priceDiffs, belowCost,
+// linkProblems), and every "no service" line carries companyUrl (the client's HubSpot
+// company, where the missing service is to be added) when the client is known. The links
+// open the record in the HubSpot portal in HUBSPOT_PORTAL_ID (an environment variable,
+// default 441953864). Nothing else changed.
 //
 // v1.1: fixes found on the first real September run (11 Oct 2026), all in how
 // Xero lines are sorted so the report stops showing things that are not faults:
@@ -55,6 +62,8 @@ import { verifySession } from '../lib/auth.js';
 import { hubspotPost, sydneyYMD } from '../lib/hubspotInvoiceData.js';
 
 const XERO_READER_BASE_URL = process.env.XERO_READER_BASE_URL || 'https://fws-xero-reader.vercel.app';
+const serviceLink = (id) => `https://app.hubspot.com/contacts/${process.env.HUBSPOT_PORTAL_ID || '441953864'}/record/0-162/${id}`;
+const companyLink = (id) => `https://app.hubspot.com/contacts/${process.env.HUBSPOT_PORTAL_ID || '441953864'}/record/0-2/${id}`;
 
 // [regex on the lower-case Xero contact name, regex on the lower-case HubSpot company names]
 const CONTACT_MAP = [
@@ -134,11 +143,13 @@ async function loadServices() {
   }
   return services.map((s) => {
     const p = s.properties || {};
-    const companies = (idsByService.get(String(s.id)) || []).map((id) => nameById.get(id) || '').filter(Boolean);
+    const ids = idsByService.get(String(s.id)) || [];
+    const companies = ids.map((id) => nameById.get(id) || '').filter(Boolean);
+    const clientCompanyIds = ids.filter((id) => nameById.get(id) && !SUPPLIER_NAMES.test(nameById.get(id)));
     return {
       id: String(s.id), name: String(p.hs_name || '').trim(), status: p.service_status || '', waste_type: p.waste_type || '', hs_name: p.hs_name || '',
       cost: parseFloat(p.unit_cost_from_service_provider) || 0, price: parseFloat(p.unit_cost_to_client) || 0, rental: String(p.bin_rental || '').toLowerCase() === 'yes',
-      companies, clientCompanies: companies.filter((c) => !SUPPLIER_NAMES.test(c)), kind: serviceKind({ hs_name: p.hs_name, waste_type: p.waste_type }),
+      companies, clientCompanyIds, clientCompanies: companies.filter((c) => !SUPPLIER_NAMES.test(c)), kind: serviceKind({ hs_name: p.hs_name, waste_type: p.waste_type }),
     };
   });
 }
@@ -191,15 +202,16 @@ export default async function handler(req, res) {
     for (const g of groups.values()) {
       const mine = clientServices(g.company);
       if (g.kind === 'other') { adHoc.push({ client: g.contact, charge: String(g.example || '').slice(0, 60), price: g.price, lines: g.lines, amount: Math.round(g.amount * 100) / 100 }); continue; }
-      if (g.kind === 'bin rental') { if (!mine.some((s) => s.rental)) { const key = `${g.company}||rental`; if (!reported.has(key)) { reported.add(key); noService.push({ client: g.contact, kind: 'bin rental', lines: g.lines, amount: Math.round(g.amount * 100) / 100, prices: [g.price], example: String(g.example || '').slice(0, 60) }); } } continue; }
+      if (g.kind === 'bin rental') { if (!mine.some((s) => s.rental)) { const key = `${g.company}||rental`; if (!reported.has(key)) { reported.add(key); noService.push({ client: g.contact, companyUrl: (() => { const c = (mine.find((s) => s.clientCompanyIds.length) || { clientCompanyIds: [] }).clientCompanyIds[0]; return c ? companyLink(c) : null; })(), kind: 'bin rental', lines: g.lines, amount: Math.round(g.amount * 100) / 100, prices: [g.price], example: String(g.example || '').slice(0, 60) }); } } continue; }
       const same = mine.filter((s) => s.kind === g.kind);
-      if (same.length === 0) { noService.push({ client: g.contact, kind: g.kind, lines: g.lines, amount: Math.round(g.amount * 100) / 100, prices: [g.price], example: String(g.example || '').slice(0, 60) }); continue; }
+      const cid = (mine.find((s) => s.clientCompanyIds.length) || { clientCompanyIds: [] }).clientCompanyIds[0];
+      if (same.length === 0) { noService.push({ client: g.contact, companyUrl: cid ? companyLink(cid) : null, kind: g.kind, lines: g.lines, amount: Math.round(g.amount * 100) / 100, prices: [g.price], example: String(g.example || '').slice(0, 60) }); continue; }
       if (g.kind === 'fuel levy') continue;   // billed as a percentage: presence is all that is checked
       const nearest = same.reduce((a, b) => (Math.abs(b.price - g.price) < Math.abs(a.price - g.price) ? b : a));
       const diff = g.price - nearest.price;
       const ratio = nearest.price > 0 ? g.price / nearest.price : 1;
       if (ratio > 3 || ratio < 0.34) { notComparable.push({ client: g.contact, kind: g.kind, xeroPrice: g.price, rateCardPrice: nearest.price, lines: g.lines, amount: Math.round(g.amount * 100) / 100, why: 'Billed as a lump sum or in a different unit' }); continue; }
-      if (Math.abs(diff) > Math.max(0.005, nearest.price * 0.005)) priceDiffs.push({ client: g.contact, kind: g.kind, service: nearest.name, serviceId: nearest.id, xeroPrice: g.price, rateCardPrice: nearest.price, difference: Math.round(diff * 10000) / 10000, lines: g.lines, amount: Math.round(g.amount * 100) / 100 });
+      if (Math.abs(diff) > Math.max(0.005, nearest.price * 0.005)) priceDiffs.push({ client: g.contact, kind: g.kind, service: nearest.name, serviceId: nearest.id, serviceUrl: serviceLink(nearest.id), xeroPrice: g.price, rateCardPrice: nearest.price, difference: Math.round(diff * 10000) / 10000, lines: g.lines, amount: Math.round(g.amount * 100) / 100 });
     }
 
     // ---------- the rate card on its own ----------
@@ -208,12 +220,12 @@ export default async function handler(req, res) {
       if (!(s.cost > 0)) continue;
       if (s.kind === 'fuel levy') continue;
       const ratio = s.price / s.cost;
-      if (s.price < s.cost - 0.0049 || ratio < 1.05) belowCost.push({ service: s.name, serviceId: s.id, cost: s.cost, price: s.price, margin: Math.round((ratio - 1) * 1000) / 10, kind: s.price < s.cost - 0.0049 ? 'below cost' : 'thin', known: KNOWN_BELOW_COST.has(s.id) });
+      if (s.price < s.cost - 0.0049 || ratio < 1.05) belowCost.push({ service: s.name, serviceId: s.id, serviceUrl: serviceLink(s.id), cost: s.cost, price: s.price, margin: Math.round((ratio - 1) * 1000) / 10, kind: s.price < s.cost - 0.0049 ? 'below cost' : 'thin', known: KNOWN_BELOW_COST.has(s.id) });
     }
     const linkProblems = [];
     for (const s of services) {
-      if (s.clientCompanies.length === 0) { linkProblems.push({ service: s.name, serviceId: s.id, problem: 'Linked to a supplier only: no client company' }); continue; }
-      if (s.clientCompanies.every((c) => directionConflict(s.name, c))) linkProblems.push({ service: s.name, serviceId: s.id, problem: `Linked to the wrong side: ${s.clientCompanies.join(' / ')}` });
+      if (s.clientCompanies.length === 0) { linkProblems.push({ service: s.name, serviceId: s.id, serviceUrl: serviceLink(s.id), problem: 'Linked to a supplier only: no client company' }); continue; }
+      if (s.clientCompanies.every((c) => directionConflict(s.name, c))) linkProblems.push({ service: s.name, serviceId: s.id, serviceUrl: serviceLink(s.id), problem: `Linked to the wrong side: ${s.clientCompanies.join(' / ')}` });
     }
     const byAmount = (a, b) => (b.amount || 0) - (a.amount || 0);
     noService.sort(byAmount); priceDiffs.sort(byAmount); adHoc.sort(byAmount); notComparable.sort(byAmount);
