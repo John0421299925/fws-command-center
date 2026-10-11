@@ -2,7 +2,17 @@
 // FWS Command Center — "Things that don't add up" (rate card audit)
 // Deploy as: api/rate-card-audit.js
 // ================================================================
-// Version: v1.2
+// Version: v1.3
+//
+// v1.3: every line now says WHICH INVOICE the Xero price came from. John, 11 Oct 2026:
+// the report showed Mt Annan general waste at "$201.55" under a heading that said
+// "James", and he reasonably asked why the rate card said $216.89 when he had asked
+// for James's July/August prices. James's July and August invoices (INV-1490 and
+// INV-1540) are both $216.89. The $201.55 was on SEPTEMBER's INV-1629, on lines
+// the system had priced for the old supplier's days (cost + 15.5%) and James then
+// authorised. The price is whatever is on the Xero line, whoever wrote it, so each
+// price difference and each "no service" line now carries invoices: ["INV-1629
+// authorised", ...] (up to four). Nothing else changed.
 //
 // v1.2: DRILL-DOWN. John, 11 Oct 2026: he wants to click from the report into HubSpot.
 // Every line that is about a service now carries serviceUrl (priceDiffs, belowCost,
@@ -193,8 +203,9 @@ export default async function handler(req, res) {
       if (!hit) { const u = unmatchedMap.get(contact) || { contact, lines: 0, amount: 0 }; u.lines++; u.amount += Number(r.LineAmount) || 0; unmatchedMap.set(contact, u); continue; }
       const kind = lineKind(String(r.LineDescription || '').toLowerCase());
       const k = `${hit[1]}||${kind}||${Number(r.UnitAmount).toFixed(4)}`;
-      const g = groups.get(k) || { company: hit[1], kind, price: Number(r.UnitAmount), lines: 0, amount: 0, example: r.LineDescription, contact };
+      const g = groups.get(k) || { company: hit[1], kind, price: Number(r.UnitAmount), lines: 0, amount: 0, example: r.LineDescription, contact, invoices: new Set() };
       g.lines++; g.amount += Number(r.LineAmount) || 0;
+      if (r.InvoiceNumber) g.invoices.add(`${r.InvoiceNumber}${r.Status ? ' ' + String(r.Status).toLowerCase() : ''}`);
       groups.set(k, g);
     }
     const clientServices = (companyPattern) => services.filter((s) => s.companies.join(' | ').toLowerCase().match(new RegExp(companyPattern)));
@@ -205,13 +216,13 @@ export default async function handler(req, res) {
       if (g.kind === 'bin rental') { if (!mine.some((s) => s.rental)) { const key = `${g.company}||rental`; if (!reported.has(key)) { reported.add(key); noService.push({ client: g.contact, companyUrl: (() => { const c = (mine.find((s) => s.clientCompanyIds.length) || { clientCompanyIds: [] }).clientCompanyIds[0]; return c ? companyLink(c) : null; })(), kind: 'bin rental', lines: g.lines, amount: Math.round(g.amount * 100) / 100, prices: [g.price], example: String(g.example || '').slice(0, 60) }); } } continue; }
       const same = mine.filter((s) => s.kind === g.kind);
       const cid = (mine.find((s) => s.clientCompanyIds.length) || { clientCompanyIds: [] }).clientCompanyIds[0];
-      if (same.length === 0) { noService.push({ client: g.contact, companyUrl: cid ? companyLink(cid) : null, kind: g.kind, lines: g.lines, amount: Math.round(g.amount * 100) / 100, prices: [g.price], example: String(g.example || '').slice(0, 60) }); continue; }
+      if (same.length === 0) { noService.push({ client: g.contact, companyUrl: cid ? companyLink(cid) : null, invoices: [...g.invoices].slice(0, 4), kind: g.kind, lines: g.lines, amount: Math.round(g.amount * 100) / 100, prices: [g.price], example: String(g.example || '').slice(0, 60) }); continue; }
       if (g.kind === 'fuel levy') continue;   // billed as a percentage: presence is all that is checked
       const nearest = same.reduce((a, b) => (Math.abs(b.price - g.price) < Math.abs(a.price - g.price) ? b : a));
       const diff = g.price - nearest.price;
       const ratio = nearest.price > 0 ? g.price / nearest.price : 1;
       if (ratio > 3 || ratio < 0.34) { notComparable.push({ client: g.contact, kind: g.kind, xeroPrice: g.price, rateCardPrice: nearest.price, lines: g.lines, amount: Math.round(g.amount * 100) / 100, why: 'Billed as a lump sum or in a different unit' }); continue; }
-      if (Math.abs(diff) > Math.max(0.005, nearest.price * 0.005)) priceDiffs.push({ client: g.contact, kind: g.kind, service: nearest.name, serviceId: nearest.id, serviceUrl: serviceLink(nearest.id), xeroPrice: g.price, rateCardPrice: nearest.price, difference: Math.round(diff * 10000) / 10000, lines: g.lines, amount: Math.round(g.amount * 100) / 100 });
+      if (Math.abs(diff) > Math.max(0.005, nearest.price * 0.005)) priceDiffs.push({ client: g.contact, kind: g.kind, service: nearest.name, serviceId: nearest.id, serviceUrl: serviceLink(nearest.id), xeroPrice: g.price, rateCardPrice: nearest.price, difference: Math.round(diff * 10000) / 10000, invoices: [...g.invoices].slice(0, 4), lines: g.lines, amount: Math.round(g.amount * 100) / 100 });
     }
 
     // ---------- the rate card on its own ----------
