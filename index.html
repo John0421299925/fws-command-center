@@ -1,5 +1,15 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.53 — 11 Oct 2026
+     v1.53: FIX — the top Margin card was still red. A card with a "flagged"
+       status takes the warning colour, and the Blended margin card is flagged
+       whenever margin is below target (14.5% against 15.5%), so red beat
+       pink. John asked for the top panels to be blue and pink. Revenue
+       (card 1) and Blended margin (card 3) now ALWAYS keep their own colours,
+       the same "category, not alarm" rule the yellow Invoices and green Quotes
+       cards already follow. The below-target warning moves inside the card:
+       the words "below 15.5% target" are shown in red in the card's small
+       text, so nothing is hidden. Colours and wording only.
      v1.52 — 11 Oct 2026
      v1.52: NEW — REVENUE IS FLUORESCENT BLUE, MARGIN IS FLUORESCENT PINK.
        John's request, agreed with Claude: each measure gets its own colour so
@@ -2405,7 +2415,7 @@
       } else if (isAwaitingApprovalCard) {
         card.className = 'vital-card invoice-vital';
       } else {
-        card.className = 'vital-card' + (flagClass ? ' ' + flagClass : (index === 0 ? ' revenue-vital' : index === 2 ? ' margin-vital' : ''));   // v1.52: Revenue blue, Margin pink unless flagged
+        card.className = 'vital-card' + (index === 0 ? ' revenue-vital' : index === 2 ? ' margin-vital' : (flagClass ? ' ' + flagClass : ''));   // v1.53: Revenue blue and Margin pink ALWAYS (a flag no longer overrides them)
       }
       card.innerHTML = `<p class="label">${label}</p><p class="value">${value}</p>${sub ? `<p class="sub">${sub}</p>` : ''}`;
     }
@@ -2478,7 +2488,7 @@
           const totalCost = marginRes.clients.reduce((s, c) => s + c.cost, 0);
           const blendedMargin = totalRev > 0 ? ((totalRev - totalCost) / totalRev) * 100 : null;
           const belowTarget = blendedMargin !== null && blendedMargin < marginRes.marginTargetPercent;
-          const marginSub = (belowTarget ? `below ${marginRes.marginTargetPercent}% target` : `target ${marginRes.marginTargetPercent}%`) + ` · ${marginRes.periodLabel}`;
+          const marginSub = (belowTarget ? `<span style="color:var(--error)">below ${marginRes.marginTargetPercent}% target</span>` : `target ${marginRes.marginTargetPercent}%`) + ` · ${marginRes.periodLabel}`;   // v1.53: the warning is in the words, in red
           setVitalCard(2, 'Blended margin', blendedMargin !== null ? blendedMargin.toFixed(1) + '%' : '—',
             marginSub,
             belowTarget ? 'flagged' : null);
