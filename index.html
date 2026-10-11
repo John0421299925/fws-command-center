@@ -1,5 +1,15 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.47 — 11 Oct 2026
+     v1.47: NEW — the "Things that don't add up" report gets DRILL-DOWN and
+       a refresh button. John: he wanted to click from the report into HubSpot,
+       and asked whether it runs in real time. (1) Service names, and the
+       client name on "no service" lines, are now links that open the
+       record in HubSpot in a new tab (links come from rate-card-audit.js
+       v1.2). (2) A "Refresh now" button and an "Updated HH:MM" time are shown at
+       the top of the report. (3) It now refreshes every 30 minutes (was every 6
+       hours); each run reads Xero and HubSpot live. Only the audit section
+       changed.
      v1.46 — 11 Oct 2026
      v1.46: NEW — "Things that don't add up": the monthly rate card audit, on the
        dashboard, so nobody has to download files or open web addresses. It
@@ -1550,7 +1560,7 @@
         startStaggered(loadExceptions, 1200, 60000);
         startStaggered(loadDealsPipeline, 2400, 300000);
         startStaggered(loadMissingInvoices, 6000, 3600000);   // v1.43: after the others, hourly
-        startStaggered(loadAudit, 9000, 21600000);            // v1.46: the monthly rate card audit, every 6 hours
+        startStaggered(loadAudit, 9000, 1800000);             // v1.46/v1.47: the monthly rate card audit, every 30 minutes
       } else {
         startStaggered(loadMySales, 0, 300000);
       }
@@ -2743,6 +2753,10 @@
       const body = document.getElementById('audit-body');
       if (!summary || !body) return;
       const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const btn0 = document.getElementById('audit-refresh');
+      if (btn0) { btn0.disabled = true; btn0.textContent = 'Refreshing…'; }
+      const link = (text, url, title) => url ? `<a href="${esc(url)}" target="_blank" rel="noopener"${title ? ` title="${esc(title)}"` : ''} style="color:inherit; text-decoration:underline">${esc(text)} ↗</a>` : esc(text);
+      const refreshBar = (stamp) => `<div style="margin-bottom:6px; font-size:12px; color:var(--muted)">${stamp ? esc(stamp) + ' · ' : ''}<button id="audit-refresh" onclick="loadAudit()" style="font-size:12px; padding:2px 8px; cursor:pointer">Refresh now</button></div>`;
       const price = (n) => { const v = Number(n); if (!isFinite(v)) return '—'; const s = v < 10 ? v.toFixed(3).replace(/0$/, '') : v.toFixed(2); return '$' + s; };
       try {
         const res = await fetch('/api/rate-card-audit');
@@ -2750,7 +2764,7 @@
         if (d.status !== 'ok') {
           summary.textContent = "Things that don't add up (could not load)";
           summary.style.color = '';
-          body.innerHTML = '<span style="color:var(--muted)">Could not load: ' + esc(d.error || 'unknown error') + '</span>';
+          body.innerHTML = refreshBar('') + '<span style="color:var(--muted)">Could not load: ' + esc(d.error || 'unknown error') + '</span>';
           return;
         }
         const c = d.counts;
@@ -2766,25 +2780,26 @@
         const td = (v, cls) => `<td${cls ? ` class="${cls}"` : ''}>${v}</td>`;
         let html = '';
         html += table('No service on the rate card', 'James billed this but the client has no active service for it.', ['Client', 'Charge', 'Lines', 'Amount', 'Price', 'Example'],
-          d.noService.map(r => `<tr class="risk">${td(esc(r.client))}${td(esc(r.kind))}${td(r.lines)}${td(money(r.amount), 'num')}${td(r.prices.map(price).join(', '))}${td(esc(r.example))}</tr>`));
+          d.noService.map(r => `<tr class="risk">${td(link(r.client, r.companyUrl, 'Open this client in HubSpot to add the service'))}${td(esc(r.kind))}${td(r.lines)}${td(money(r.amount), 'num')}${td(r.prices.map(price).join(', '))}${td(esc(r.example))}</tr>`));
         html += table('Service links to fix', 'A service must be linked to the right client.', ['Service', 'Problem'],
-          d.linkProblems.map(r => `<tr class="risk">${td(esc(r.service))}${td(esc(r.problem))}</tr>`));
+          d.linkProblems.map(r => `<tr class="risk">${td(link(r.service, r.serviceUrl, 'Open this service in HubSpot'))}${td(esc(r.problem))}</tr>`));
         html += table('Xero clients not in HubSpot', 'James billed a client the rate card does not know.', ['Xero client', 'Lines', 'Amount'],
           d.unmatchedXero.map(r => `<tr class="risk">${td(esc(r.contact))}${td(r.lines)}${td(money(r.amount), 'num')}</tr>`));
         html += table("James's price differs from the rate card", 'The nearest rate card price for that charge.', ['Client', 'Charge', 'James', 'Rate card', 'Difference', 'Lines', 'Amount'],
-          d.priceDiffs.map(r => `<tr class="hold">${td(esc(r.client))}${td(esc(r.kind))}${td(price(r.xeroPrice))}${td(price(r.rateCardPrice))}${td((r.difference > 0 ? '+' : '') + price(r.difference).replace('$-', '-$'))}${td(r.lines)}${td(money(r.amount), 'num')}</tr>`));
+          d.priceDiffs.map(r => `<tr class="hold">${td(esc(r.client))}${td(link(r.kind, r.serviceUrl, r.service))}${td(price(r.xeroPrice))}${td(price(r.rateCardPrice))}${td((r.difference > 0 ? '+' : '') + price(r.difference).replace('$-', '-$'))}${td(r.lines)}${td(money(r.amount), 'num')}</tr>`));
         const newBc = d.belowCost.filter(b => !b.known), knownBc = d.belowCost.filter(b => b.known);
-        const bcRow = (b, cls) => `<tr class="${cls}">${td(esc(b.service))}${td(b.kind === 'below cost' ? 'Below cost' : 'Thin')}${td(price(b.cost))}${td(price(b.price))}${td(b.margin + '%')}</tr>`;
+        const bcRow = (b, cls) => `<tr class="${cls}">${td(link(b.service, b.serviceUrl, 'Open this service in HubSpot'))}${td(b.kind === 'below cost' ? 'Below cost' : 'Thin')}${td(price(b.cost))}${td(price(b.price))}${td(b.margin + '%')}</tr>`;
         html += table('Rate card prices at or below cost: NEW', 'Not yet accepted.', ['Service', 'What', 'Our cost', 'Price', 'Margin'], newBc.map(b => bcRow(b, 'hold')));
         html += table('Rate card prices at or below cost: known', "Accepted at James's price.", ['Service', 'What', 'Our cost', 'Price', 'Margin'], knownBc.map(b => bcRow(b, '')));
         html += table('Lump sums and one-offs (not faults)', 'Lines that cannot be compared with a per-unit service.', ['Client', 'Charge', 'Amount'],
           [...d.notComparable.map(r => `<tr>${td(esc(r.client))}${td(esc(r.kind) + ' (lump sum)')}${td(money(r.amount), 'num')}</tr>`), ...d.adHoc.map(r => `<tr>${td(esc(r.client))}${td(esc(r.charge))}${td(money(r.amount), 'num')}</tr>`)]);
         if (!html) html = '<span style="color:var(--muted)">Everything adds up for ' + esc(label) + '.</span>';
-        body.innerHTML = `<div style="margin-bottom:6px; font-size:12px; color:var(--muted)">Checked ${d.xeroLines} Xero lines for ${esc(label)} against ${d.activeServices} active services.</div>` + html;
+        const at = new Date(d.asAt).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Sydney' });
+        body.innerHTML = refreshBar('Updated ' + at) + `<div style="margin-bottom:6px; font-size:12px; color:var(--muted)">Checked ${d.xeroLines} Xero lines for ${esc(label)} against ${d.activeServices} active services.</div>` + html;
       } catch (err) {
         console.error('loadAudit failed:', err);
         summary.textContent = "Things that don't add up (could not load)";
-        body.innerHTML = '<span style="color:var(--muted)">Could not load.</span>';
+        body.innerHTML = refreshBar('') + '<span style="color:var(--muted)">Could not load.</span>';
       }
     }
   </script>
