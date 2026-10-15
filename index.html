@@ -1,5 +1,14 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.55 — 15 Oct 2026
+     v1.55: NEW — "Request a New Quote" takes a few words, not a form. The rep
+       types the services (e.g. "3m3 General waste Mon Wed Fri, 80kg/m3,
+       $124/service"), checks the read-back, answers any questions, then sends.
+       Two routes: a client quote for review when every service has a price,
+       or a request to suppliers when there is no price (asked first). Calls
+       api/quote-shorthand.js. The old structured form's JS is still in the
+       file but no longer used; it can be removed in a later tidy. Only the
+       quote form changed.
      v1.54 — 11 Oct 2026
      v1.54: NEW — PAYABLES IS FLUORESCENT PURPLE (#b24bff). John asked what to
        do with Payables; agreed: its own colour, clear of blue (Revenue), pink
@@ -1381,13 +1390,39 @@
     </div>
   </div>
 
-  <!-- v1.24: Request a New Quote — lets a rep kick off a real quote
-       request straight from the Sales Command Centre, instead of
-       writing an email to quotes@futurewaste.com.au by hand. Calls
-       the Auto Quotation Agent's real submit_quote_request endpoint
-       via api/submit-quote-request.js (server-side proxy, avoiding
-       the same CORS issue solved elsewhere on this page). Two modes,
-       matching the agent's own two accepted request shapes exactly. -->
+  <!-- v1.55: Request a New Quote, shorthand version. The rep types a few words
+       (e.g. "3m3 General waste Mon Wed Fri, 80kg/m3, $124/service"), checks the
+       read-back, answers any questions, then sends. Calls api/quote-shorthand.js
+       (server-side proxy). Two routes: a client quote when every service has a
+       rate, or a request to suppliers when there is no rate. -->
+  <div class="section-heading">Request a New Quote</div>
+  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
+    <summary>Quote from a few words</summary>
+    <div style="padding:16px;">
+      <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+        <div style="flex:1 1 220px;"><label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client *</label>
+          <input id="qr2-client" type="text" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></div>
+        <div style="flex:1 1 220px;"><label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Site *</label>
+          <input id="qr2-site" type="text" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></div>
+        <div style="flex:1 1 220px;"><label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Site address</label>
+          <input id="qr2-address" type="text" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></div>
+        <div style="flex:0 1 120px;"><label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Suburb</label>
+          <input id="qr2-suburb" type="text" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></div>
+        <div style="flex:1 1 180px;"><label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client contact (first name)</label>
+          <input id="qr2-contact" type="text" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></div>
+        <div style="flex:1 1 220px;"><label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client email (for the final send)</label>
+          <input id="qr2-email" type="email" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></div>
+      </div>
+      <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">What the client needs (a few words per service, on separate lines)</label>
+      <textarea id="qr2-text" rows="4" placeholder="3m3 General waste Mon Wed Fri, 80kg/m3, $124/service" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-family:inherit;"></textarea>
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button type="button" id="qr2-check-btn" onclick="qr2Check()">Check the read-back</button>
+      </div>
+      <div id="qr2-readback" style="margin-top:14px;"></div>
+      <div id="qr2-result" style="margin-top:12px;"></div>
+    </div>
+  </div>
+
   <div class="section-heading">Request a New Quote</div>
   <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
     <summary>Start a new quote request</summary>
@@ -2903,6 +2938,97 @@
         console.error('loadAudit failed:', err);
         summary.textContent = "Things that don't add up (could not load)";
         body.innerHTML = refreshBar('') + '<span style="color:var(--muted)">Could not load.</span>';
+      }
+    }
+
+    // v1.55: Request a New Quote (shorthand). Calls api/quote-shorthand.js.
+    let qr2State = null;
+    function qr2Payload(step) {
+      return {
+        step,
+        text: document.getElementById('qr2-text').value.trim(),
+        client: document.getElementById('qr2-client').value.trim(),
+        site: document.getElementById('qr2-site').value.trim(),
+        site_address: document.getElementById('qr2-address').value.trim(),
+        suburb: document.getElementById('qr2-suburb').value.trim(),
+        contact: document.getElementById('qr2-contact').value.trim(),
+        first_name: document.getElementById('qr2-contact').value.trim(),
+        client_email: document.getElementById('qr2-email').value.trim(),
+      };
+    }
+    async function qr2Call(step, extra) {
+      const res = await fetch('/api/quote-shorthand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign(qr2Payload(step), extra || {})),
+      });
+      return res.json();
+    }
+    async function qr2Check() {
+      const box = document.getElementById('qr2-readback');
+      const result = document.getElementById('qr2-result');
+      result.innerHTML = '';
+      box.innerHTML = '<span style="color:var(--muted)">Checking…</span>';
+      try {
+        const data = await qr2Call('read-back');
+        if (data.status !== 'ok') throw new Error(data.error || 'Could not read the request');
+        qr2State = data;
+        renderQr2ReadBack(data);
+      } catch (err) {
+        qr2State = null;
+        box.innerHTML = `<span style="color:var(--error)">${esc(err.message)}</span>`;
+      }
+    }
+    function renderQr2ReadBack(d) {
+      const box = document.getElementById('qr2-readback');
+      const routeLabel = d.route === 'client_quote'
+        ? 'Every service has a price: this will be a client quote, sent to you for review.'
+        : d.route === 'request_quote'
+          ? 'No prices given: this will be a request to suppliers.'
+          : 'Some services have prices and some do not.';
+      const rows = d.lines.map((l) => `
+        <tr>
+          <td>${esc(l.service)}</td>
+          <td>${esc(l.size || '—')}</td>
+          <td>${l.bins ? esc(String(l.bins)) : '<span style="color:var(--error)">?</span>'}</td>
+          <td>${l.freq_note ? esc(l.freq_note) : '<span style="color:var(--error)">?</span>'}</td>
+          <td>${l.allowance != null ? esc(String(l.allowance)) + ' kg/m³' : '—'}</td>
+          <td>${l.rate != null ? '$' + esc(String(l.rate)) + ' ' + esc(l.unit || '') : '<span style="color:var(--muted)">none</span>'}</td>
+        </tr>`).join('');
+      const questions = (d.questions || []).map((q) => `<li>${esc(q)}</li>`).join('');
+      const assumptions = (d.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join('');
+      let action = '';
+      if (!d.questions.length && d.route === 'client_quote') {
+        action = `<button type="button" onclick="qr2Build()">Send for my review</button>`;
+      } else if (!d.questions.length && d.route === 'request_quote') {
+        action = `<button type="button" onclick="qr2Build(true)">Yes, request from suppliers</button>`;
+      }
+      box.innerHTML = `
+        <div style="font-size:0.85rem; margin-bottom:8px;">${esc(routeLabel)}</div>
+        <table>
+          <thead><tr><th>Service</th><th>Size</th><th>Bins</th><th>Frequency</th><th>Allowance</th><th>Rate</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${questions ? `<div style="margin-top:10px; color:var(--error);"><strong>Please answer:</strong><ul>${questions}</ul><div style="font-size:0.8rem;">Edit the words above and check again.</div></div>` : ''}
+        ${assumptions ? `<div style="margin-top:10px; color:var(--muted); font-size:0.85rem;"><strong>Assumed:</strong><ul>${assumptions}</ul></div>` : ''}
+        ${d.totals ? `<div style="margin-top:10px; font-size:0.85rem;">Weekly ex GST <strong>$${d.totals.weekly.toFixed(2)}</strong> · Per month inc GST <strong>$${d.totals.monthly_inc.toFixed(2)}</strong> · Yearly inc GST <strong>$${d.totals.yearly_inc.toFixed(2)}</strong></div>` : ''}
+        <div style="margin-top:12px;">${action}</div>`;
+    }
+    async function qr2Build(confirm) {
+      const result = document.getElementById('qr2-result');
+      result.innerHTML = '<span style="color:var(--muted)">Working…</span>';
+      try {
+        const data = await qr2Call('build', { confirm: confirm === true });
+        if (data.status === 'ok' && data.quote_no) {
+          result.innerHTML = `<span style="color:var(--ok)">Quote ${esc(data.quote_no)} is with you for review. Nothing has been sent to the client.</span>`;
+        } else if (data.status === 'ok' && data.rfp) {
+          result.innerHTML = `<span style="color:var(--ok)">Request sent to suppliers${data.rfp.hubspot_ticket_id ? ` (ticket ${esc(String(data.rfp.hubspot_ticket_id))})` : ''}.</span>`;
+        } else {
+          const msg = (data.questions || []).join(' ') || data.error || 'Something went wrong.';
+          result.innerHTML = `<span style="color:var(--error)">${esc(msg)}</span>`;
+        }
+      } catch (err) {
+        result.innerHTML = `<span style="color:var(--error)">${esc(err.message)}</span>`;
       }
     }
   </script>
