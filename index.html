@@ -1,5 +1,9 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.56 — 15 Oct 2026
+     v1.56: CHANGED — names on the quote form. The supplier route is "RFP – Request
+       for Pricing" and the client route is "Client Quote", so reps can tell them
+       apart. Labels only; no change to what either route does.
      v1.55 — 15 Oct 2026
      v1.55: NEW — "Request a New Quote" takes a few words, not a form. The rep
        types the services (e.g. "3m3 General waste Mon Wed Fri, 80kg/m3,
@@ -2982,9 +2986,9 @@
     function renderQr2ReadBack(d) {
       const box = document.getElementById('qr2-readback');
       const routeLabel = d.route === 'client_quote'
-        ? 'Every service has a price: this will be a client quote, sent to you for review.'
+        ? 'Every service has a price: this will be a Client Quote, sent to you for review. Nothing goes to the client.'
         : d.route === 'request_quote'
-          ? 'No prices given: this will be a request to suppliers.'
+          ? 'No prices given: this will be an RFP – Request for Pricing, sent to suppliers.'
           : 'Some services have prices and some do not.';
       const rows = d.lines.map((l) => `
         <tr>
@@ -2999,9 +3003,9 @@
       const assumptions = (d.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join('');
       let action = '';
       if (!d.questions.length && d.route === 'client_quote') {
-        action = `<button type="button" onclick="qr2Build()">Send for my review</button>`;
+        action = `<button type="button" onclick="qr2Build()">Client Quote</button>`;
       } else if (!d.questions.length && d.route === 'request_quote') {
-        action = `<button type="button" onclick="qr2Build(true)">Yes, request from suppliers</button>`;
+        action = `<button type="button" onclick="qr2Build(true)">RFP – Request for Pricing</button>`;
       }
       box.innerHTML = `
         <div style="font-size:0.85rem; margin-bottom:8px;">${esc(routeLabel)}</div>
@@ -3020,9 +3024,9 @@
       try {
         const data = await qr2Call('build', { confirm: confirm === true });
         if (data.status === 'ok' && data.quote_no) {
-          result.innerHTML = `<span style="color:var(--ok)">Quote ${esc(data.quote_no)} is with you for review. Nothing has been sent to the client.</span>`;
+          result.innerHTML = `<span style="color:var(--ok)">Client Quote ${esc(data.quote_no)} is with you for review. Nothing has been sent to the client.</span>`;
         } else if (data.status === 'ok' && data.rfp) {
-          result.innerHTML = `<span style="color:var(--ok)">Request sent to suppliers${data.rfp.hubspot_ticket_id ? ` (ticket ${esc(String(data.rfp.hubspot_ticket_id))})` : ''}.</span>`;
+          result.innerHTML = `<span style="color:var(--ok)">RFP sent to suppliers${data.rfp.hubspot_ticket_id ? ` (ticket ${esc(String(data.rfp.hubspot_ticket_id))})` : ''}.</span>`;
         } else {
           const msg = (data.questions || []).join(' ') || data.error || 'Something went wrong.';
           result.innerHTML = `<span style="color:var(--error)">${esc(msg)}</span>`;
