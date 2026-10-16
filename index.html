@@ -1,5 +1,11 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.59 — 15 Oct 2026
+     v1.59: NEW — Client Quote box: each line has a "Supplier price?" tick and a
+       "Margin %" box. Unticked lines are client prices, used exactly as typed.
+       A ticked line is a supplier's cost, and the margin you type sets the client
+       price (cost / (1 - margin)). The quote won't build if a ticked line has no
+       margin. Only the Client Quote box changed.
      v1.58 — 15 Oct 2026
      v1.58: FIX — v1.56 and v1.57 wrongly added extra boxes. The page has the two
        existing quote boxes and they are renamed, nothing added:
@@ -2995,12 +3001,7 @@
     }
     function renderQr2ReadBack(d) {
       const box = document.getElementById('qr2-readback');
-      const routeLabel = d.route === 'client_quote'
-        ? 'Every service has a price: this will be a Client Quote, sent to you for review. Nothing goes to the client.'
-        : d.route === 'request_quote'
-          ? 'No prices given, so this is not a Client Quote. Use the RFP (Request for Pricing) box below.'
-          : 'Some services have prices and some do not.';
-      const rows = d.lines.map((l) => `
+      const rows = d.lines.map((l, i) => `
         <tr>
           <td>${esc(l.service)}</td>
           <td>${esc(l.size || '—')}</td>
@@ -3008,17 +3009,26 @@
           <td>${l.freq_note ? esc(l.freq_note) : '<span style="color:var(--error)">?</span>'}</td>
           <td>${l.allowance != null ? esc(String(l.allowance)) + ' kg/m³' : '—'}</td>
           <td>${l.rate != null ? '$' + esc(String(l.rate)) + ' ' + esc(l.unit || '') : '<span style="color:var(--muted)">none</span>'}</td>
+          <td><input type="checkbox" id="qr2-sup-${i}" onchange="qr2ToggleMargin(${i})" title="Tick if this price is a supplier's price" /></td>
+          <td><input type="number" step="0.1" min="0.1" max="49.9" id="qr2-margin-${i}" disabled style="width:80px; padding:4px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></td>
         </tr>`).join('');
       const questions = (d.questions || []).map((q) => `<li>${esc(q)}</li>`).join('');
       const assumptions = (d.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join('');
-      let action = '';
-      if (!d.questions.length && d.route === 'client_quote') {
+
+      let note = '', action = '';
+      if (d.route === 'mixed') {
+        note = 'Some services have a price and some do not. Give a price for every service, or none.';
+      } else if (d.route === 'request_quote') {
+        note = 'No prices given, so this is not a Client Quote. Use the RFP (Request for Pricing) box below.';
+      } else if (!d.questions.length) {
+        note = 'This will be a Client Quote, sent to you for review. Nothing goes to the client. Tick "Supplier price" only where the price is a supplier\'s, and give the margin you want on that line.';
         action = `<button type="button" onclick="qr2Build()">Client Quote</button>`;
       }
+      box.dataset.lines = String(d.lines.length);
       box.innerHTML = `
-        <div style="font-size:0.85rem; margin-bottom:8px;">${esc(routeLabel)}</div>
+        <div style="font-size:0.85rem; margin-bottom:8px;">${esc(note)}</div>
         <table>
-          <thead><tr><th>Service</th><th>Size</th><th>Bins</th><th>Frequency</th><th>Allowance</th><th>Rate</th></tr></thead>
+          <thead><tr><th>Service</th><th>Size</th><th>Bins</th><th>Frequency</th><th>Allowance</th><th>Rate</th><th>Supplier price?</th><th>Margin %</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
         ${questions ? `<div style="margin-top:10px; color:var(--error);"><strong>Please answer:</strong><ul>${questions}</ul><div style="font-size:0.8rem;">Edit the words above and check again.</div></div>` : ''}
@@ -3026,11 +3036,27 @@
         ${d.totals ? `<div style="margin-top:10px; font-size:0.85rem;">Weekly ex GST <strong>$${d.totals.weekly.toFixed(2)}</strong> · Per month inc GST <strong>$${d.totals.monthly_inc.toFixed(2)}</strong> · Yearly inc GST <strong>$${d.totals.yearly_inc.toFixed(2)}</strong></div>` : ''}
         <div style="margin-top:12px;">${action}</div>`;
     }
+    function qr2ToggleMargin(i) {
+      const on = document.getElementById('qr2-sup-' + i).checked;
+      const m = document.getElementById('qr2-margin-' + i);
+      m.disabled = !on;
+      if (!on) m.value = '';
+    }
+    function qr2PriceBasis() {
+      const n = Number(document.getElementById('qr2-readback').dataset.lines || 0);
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const sup = document.getElementById('qr2-sup-' + i);
+        const m = document.getElementById('qr2-margin-' + i);
+        out.push({ supplier: !!(sup && sup.checked), margin: m ? Number(m.value) : null });
+      }
+      return out;
+    }
     async function qr2Build(confirm) {
       const result = document.getElementById('qr2-result');
       result.innerHTML = '<span style="color:var(--muted)">Working…</span>';
       try {
-        const data = await qr2Call('build', { confirm: confirm === true });
+        const data = await qr2Call('build', { confirm: confirm === true, price_basis: qr2PriceBasis() });
         if (data.status === 'ok' && data.quote_no) {
           result.innerHTML = `<span style="color:var(--ok)">Client Quote ${esc(data.quote_no)} is with you for review. Nothing has been sent to the client.</span>`;
         } else if (data.status === 'ok' && data.rfp) {
