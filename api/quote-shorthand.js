@@ -1,6 +1,8 @@
 // FWS Command Centre — Quote shorthand proxy
 // Deploy as: api/quote-shorthand.js
-// Version: v1.0
+// Version: v1.1
+// v1.1: calls the Quote Agent's single route /api/quote_from_shorthand and passes
+//       the step as "action". Shows the real problem when the agent returns a non-JSON page.
 //
 // PURPOSE: lets a logged-in rep read back and build a quote from their
 // shorthand, straight from the Sales Command Centre. Same proxy pattern as
@@ -21,7 +23,8 @@
 const { verifySession, findUserWithPassword } = require("../lib/auth");
 
 const AUTO_QUOTATION_AGENT_BASE = "https://fws-auto-quotation-agent.vercel.app";
-const STEPS = { "read-back": "/api/quote/read-back", build: "/api/quote/build" };
+const AGENT_PATH = "/api/quote_from_shorthand";
+const STEPS = { "read-back": true, build: true };
 
 module.exports = async (req, res) => {
   const session = verifySession(req);
@@ -35,8 +38,7 @@ module.exports = async (req, res) => {
   }
 
   const body = req.body || {};
-  const path = STEPS[body.step];
-  if (!path) {
+  if (!STEPS[body.step]) {
     res.status(400).json({ status: "error", error: "step must be read-back or build" });
     return;
   }
@@ -58,9 +60,10 @@ module.exports = async (req, res) => {
   // Drop anything the browser sent that tries to set identity or secrets.
   const { requested_by, requester: _r, ...clean } = body;
   const { step, ...payload } = clean;
+  payload.action = step;
 
   try {
-    const resp = await fetch(`${AUTO_QUOTATION_AGENT_BASE}${path}`, {
+    const resp = await fetch(`${AUTO_QUOTATION_AGENT_BASE}${AGENT_PATH}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -69,7 +72,15 @@ module.exports = async (req, res) => {
       },
       body: JSON.stringify(payload),
     });
-    const data = await resp.json().catch(() => ({ status: "error", error: "Bad response from the quote agent" }));
+    const text = await resp.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      // The agent sent a page, not JSON: show what it did, so the real cause is visible.
+      data = { status: "error", error: `The quote agent replied with HTTP ${resp.status}, not data.`,
+               detail: text.slice(0, 200) };
+    }
     res.status(resp.status).json(data);
   } catch (err) {
     res.status(500).json({ status: "error", error: String(err) });
