@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!--
   FWS Command Centre — Quote Approvals
-  Version: v1.7
+  Version: v1.8
 
   Lists quotation tickets ready for review (all SPs replied), and lets
   you open one to see the price comparison, pick a winner, and
@@ -12,47 +12,17 @@
   Vercel project directly.
 
   v1.0 - Initial build.
-  v1.1 - Fixed "Invalid Date" on the pending-quotes list: HubSpot
-         returns hs_lastmodifieddate as an ISO date string, not epoch
-         milliseconds, so fmtDate() was parsing it wrong.
-  v1.2 - Added the same site-wide login check as index.html: redirects
-         to /login.html if there's no valid session. Real protection
-         is server-side (quotes-pending.js, quote-comparison.js and
-         approve-quote.js all now check the session cookie themselves).
-  v1.3 - Added the actual "Send to Client" step, appearing only after
-         a successful quote generation. Deliberately its own separate,
-         explicit action — pre-fills whatever client email was
-         captured at intake (editable, since that data is often
-         missing or wrong), and requires a second, explicit confirm
-         click showing the exact recipient before anything is actually
-         emailed to someone outside FWS. This is the one action on
-         this whole page that can't be undone once clicked.
-  v1.4 - Added a "Vs. this SP's recent quotes" column, showing the
-         new prior_quotes data from get_comparison_data() — what this
-         same SP has quoted for this same waste type elsewhere in the
-         last 90 days, and how today's quote compares (% higher/lower/
-         same). Helps catch a supplier quoting out of line with their
-         own recent pattern, not just against the other SPs on this
-         one job.
-  v1.5 - Added a "Vs. recent realised cost" column, showing the new
-         realised_cost data from get_comparison_data() — what's
-         actually been paid to this SP for this waste type on real
-         invoices in the last 90 days, across all clients. A second,
-         independent reference point alongside recent quotes: one
-         compares quote-to-quote, this one compares quote-to-actual-
-         spend.
-  v1.6 - Added a "Rate card" column, showing the standing p_services
-         rate for this client + supplier + waste type, when one
-         exists (only applicable to existing clients with an existing
-         service on file — blank for new clients/sites, as expected).
-         Third and final reference point alongside prior quotes and
-         realised cost.
-  v1.7 - "Vs. recent realised cost" now shows the container size it
-         matched (e.g. "660L") alongside the invoice count, since
-         realised_cost (shared_logic.py v3.10) now matches strictly on
-         container size rather than blending sizes together — this
-         makes it visible on-screen exactly what's being compared,
-         not just correct behind the scenes.
+  v1.1 - Fixed "Invalid Date" on the pending-quotes list.
+  v1.2 - Site-wide login check (redirects to /login.html if no session).
+  v1.3 - Added the explicit "Send to Client" step with a confirm click.
+  v1.4 - Added "Vs. this SP's recent quotes" column.
+  v1.5 - Added "Vs. recent realised cost" column.
+  v1.6 - Added "Rate card" column.
+  v1.7 - "Vs. recent realised cost" shows the container size matched.
+  v1.8 - Client Quotes: columns relabelled Cost, Margin, Client price. Each bin line shows its
+         excess (rate and allowance per lift) and its bin rent per month. The header shows
+         "Margin: per line" for a Client Quote instead of "not set". Supplier comparisons keep
+         their existing columns.
 -->
 <html lang="en">
 <head>
@@ -103,7 +73,7 @@
   }
 
   main {
-    max-width: 840px;
+    max-width: 1040px;
     margin: 0 auto;
     padding: 20px 24px 60px;
   }
@@ -199,12 +169,18 @@
     padding: 8px 10px;
     border-bottom: 1px solid var(--border);
     font-size: 14px;
+    vertical-align: top;
   }
 
   th {
     color: var(--ink-soft);
     font-weight: 500;
     font-size: 13px;
+  }
+
+  .sub {
+    color: var(--ink-soft);
+    font-size: 12px;
   }
 
   .warning-banner {
@@ -394,6 +370,17 @@
     return d.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
   }
 
+  // v1.8: a Client Quote is one whose only supplier option is "Your price".
+  function isClientQuote(data) {
+    return (data.companies_replied || []).includes("Your price");
+  }
+
+  function diffText(price, reference) {
+    if (price == null || !reference) return "";
+    const pct = Math.round(((price - reference) / reference) * 100);
+    return pct > 0 ? ` (${pct}% higher)` : pct < 0 ? ` (${Math.abs(pct)}% lower)` : " (same)";
+  }
+
   async function loadList() {
     listContainer.className = "loading";
     listContainer.textContent = "Loading pending quotes…";
@@ -450,64 +437,78 @@
     loadList();
   }
 
+  function clientRow(wt, opt) {
+    // v1.8: a Client Quote line. Cost only where it's a supplier's price; client price is the rate.
+    const isSupplier = opt.price_basis === "supplier";
+    const cost = isSupplier ? fmtMoney(opt.sp_price) : "—";
+    const margin = opt.margin_pct != null ? `${opt.margin_pct}%` : "—";
+    const client = opt.suggested_client_price != null ? fmtMoney(opt.suggested_client_price) : "—";
+    const excess = opt.excess_rate != null
+      ? `${fmtMoney(opt.excess_rate)}/kg${opt.excess_allowance_kg ? ` over ${opt.excess_allowance_kg} kg/lift` : ""}`
+      : "No excess";
+    const rent = opt.rent_monthly != null ? `${fmtMoney(opt.rent_monthly)}/mo` : "—";
+    return `
+      <tr>
+        <td>${wt.waste_type}</td>
+        <td>Your price</td>
+        <td>${cost}</td>
+        <td>${margin}</td>
+        <td><strong>${client}</strong></td>
+        <td>${excess}</td>
+        <td>${rent}</td>
+        <td colspan="3" class="sub">Client Quote: no supplier comparison</td>
+      </tr>`;
+  }
+
+  function supplierRow(wt, opt) {
+    let priorNote = "—";
+    if (opt.prior_quotes) {
+      const pq = opt.prior_quotes;
+      priorNote = `${fmtMoney(pq.average_price)} avg${diffText(opt.sp_price, pq.average_price)} <span class="sub">(${pq.quote_count} quote${pq.quote_count === 1 ? "" : "s"}, ${pq.lookback_days}d)</span>`;
+    }
+    let realisedNote = "—";
+    if (opt.realised_cost) {
+      const rc = opt.realised_cost;
+      realisedNote = `${fmtMoney(rc.average_cost)} avg${diffText(opt.sp_price, rc.average_cost)} <span class="sub">(${rc.invoice_count} invoice${rc.invoice_count === 1 ? "" : "s"}, ${rc.lookback_days}d${rc.container_size ? ", " + rc.container_size : ""})</span>`;
+    }
+    let rateCardNote = "—";
+    if (opt.rate_card && opt.rate_card.rate_card_sp_cost != null) {
+      const rcard = opt.rate_card;
+      rateCardNote = `${fmtMoney(rcard.rate_card_sp_cost)}${diffText(opt.sp_price, rcard.rate_card_sp_cost)} <span class="sub">(rate card)</span>`;
+    }
+    return `
+      <tr>
+        <td>${wt.waste_type}</td>
+        <td>${opt.company}</td>
+        <td>${opt.sp_price != null ? fmtMoney(opt.sp_price) + " " + (opt.unit || "") : (opt.raw_price ?? "—")}</td>
+        <td>—</td>
+        <td>${opt.suggested_client_price != null ? fmtMoney(opt.suggested_client_price) : "—"}</td>
+        <td>—</td>
+        <td>—</td>
+        <td>${priorNote}</td>
+        <td>${realisedNote}</td>
+        <td>${rateCardNote}</td>
+      </tr>`;
+  }
+
   function renderDetail(ticketId, data) {
     currentClientEmail = data.client_contact_email || "";
     currentClientName = data.client_name || "";
 
-    const marginPct = data.margin_fraction != null ? (data.margin_fraction * 100).toFixed(0) + "%" : "not set";
+    const clientQuote = isClientQuote(data);
+    const marginPct = clientQuote
+      ? "per line"
+      : (data.margin_fraction != null ? (data.margin_fraction * 100).toFixed(0) + "%" : "not set");
 
     let sitesHtml = "";
     data.sites.forEach((site) => {
       let rows = "";
       site.waste_types.forEach((wt) => {
         wt.options.forEach((opt) => {
-          let priorNote = "—";
-          if (opt.prior_quotes) {
-            const pq = opt.prior_quotes;
-            const diffPct = opt.sp_price != null && pq.average_price
-              ? Math.round(((opt.sp_price - pq.average_price) / pq.average_price) * 100)
-              : null;
-            const diffText = diffPct !== null
-              ? (diffPct > 0 ? ` (${diffPct}% higher)` : diffPct < 0 ? ` (${Math.abs(diffPct)}% lower)` : " (same)")
-              : "";
-            priorNote = `${fmtMoney(pq.average_price)} avg${diffText} <span style="color:var(--ink-soft);font-size:12px;">(${pq.quote_count} quote${pq.quote_count === 1 ? "" : "s"}, ${pq.lookback_days}d)</span>`;
-          }
-          let realisedNote = "—";
-          if (opt.realised_cost) {
-            const rc = opt.realised_cost;
-            const diffPct = opt.sp_price != null && rc.average_cost
-              ? Math.round(((opt.sp_price - rc.average_cost) / rc.average_cost) * 100)
-              : null;
-            const diffText = diffPct !== null
-              ? (diffPct > 0 ? ` (${diffPct}% higher)` : diffPct < 0 ? ` (${Math.abs(diffPct)}% lower)` : " (same)")
-              : "";
-            realisedNote = `${fmtMoney(rc.average_cost)} avg${diffText} <span style="color:var(--ink-soft);font-size:12px;">(${rc.invoice_count} invoice${rc.invoice_count === 1 ? "" : "s"}, ${rc.lookback_days}d${rc.container_size ? ", " + rc.container_size : ""})</span>`;
-          }
-          let rateCardNote = "—";
-          if (opt.rate_card && opt.rate_card.rate_card_sp_cost != null) {
-            const rcard = opt.rate_card;
-            const diffPct = opt.sp_price != null
-              ? Math.round(((opt.sp_price - rcard.rate_card_sp_cost) / rcard.rate_card_sp_cost) * 100)
-              : null;
-            const diffText = diffPct !== null
-              ? (diffPct > 0 ? ` (${diffPct}% higher)` : diffPct < 0 ? ` (${Math.abs(diffPct)}% lower)` : " (same)")
-              : "";
-            rateCardNote = `${fmtMoney(rcard.rate_card_sp_cost)}${diffText} <span style="color:var(--ink-soft);font-size:12px;">(rate card)</span>`;
-          }
-          rows += `
-            <tr>
-              <td>${wt.waste_type}</td>
-              <td>${opt.company}</td>
-              <td>${opt.sp_price != null ? fmtMoney(opt.sp_price) + " " + (opt.unit || "") : (opt.raw_price ?? "—")}</td>
-              <td>${opt.suggested_client_price != null ? fmtMoney(opt.suggested_client_price) : "—"}</td>
-              <td>${priorNote}</td>
-              <td>${realisedNote}</td>
-              <td>${rateCardNote}</td>
-            </tr>
-          `;
+          rows += (opt.company === "Your price" || clientQuote) ? clientRow(wt, opt) : supplierRow(wt, opt);
         });
         if (wt.warning) {
-          rows += `<tr><td colspan="7"><div class="warning-banner">${wt.warning}</div></td></tr>`;
+          rows += `<tr><td colspan="10"><div class="warning-banner">${wt.warning}</div></td></tr>`;
         }
       });
 
@@ -516,7 +517,7 @@
           <h3>${site.site_label}${site.location ? " — " + site.location : ""}</h3>
           <table>
             <thead>
-              <tr><th>Waste type</th><th>Supplier</th><th>Supplier price</th><th>Suggested client price</th><th>Vs. this SP's recent quotes</th><th>Vs. recent realised cost</th><th>Rate card</th></tr>
+              <tr><th>Waste type</th><th>Supplier</th><th>Cost</th><th>Margin</th><th>Client price</th><th>Excess</th><th>Bin rent</th><th>Vs. this SP's recent quotes</th><th>Vs. recent realised cost</th><th>Rate card</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
