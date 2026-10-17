@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.63 — 15 Oct 2026
+     v1.63: FIX — the Client Quote read-back table was wider than its box, so the Bin rent
+       columns ran off the right edge. The box is wider and the table scrolls sideways if needed.
      v1.62 — 15 Oct 2026
      v1.62: CHANGED — Bin rent is ticked and priced per bin line, not once for the quote.
        The read-back totals include the rent, so they match the quote.
@@ -1326,7 +1329,7 @@
        client would actually be billed. Purely client-side accumulation
        — nothing is saved server-side, this is a sandbox tool. -->
   <div class="section-heading">Prospect Value Calculator</div>
-  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
+  <div class="drilldown calculator-highlight" style="max-width:1220px; margin:0 auto 16px;" open>
     <summary>Estimate a prospective site's annual value</summary>
     <!-- v1.36: NEW — quick commission estimate, per John's request: a
          simple direct-entry alternative for when a rep already has a
@@ -1427,7 +1430,7 @@
        (server-side proxy). Two routes: a client quote when every service has a
        rate, or a request to suppliers when there is no rate. -->
   <div class="section-heading">Client Quote</div>
-  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
+  <div class="drilldown calculator-highlight" style="max-width:1220px; margin:0 auto 16px;" open>
     <summary>Provide details to Create a Client Quote</summary>
     <div style="padding:16px;">
       <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
@@ -1455,7 +1458,7 @@
   </div>
 
   <div class="section-heading">RFP (Request for Pricing)</div>
-  <div class="drilldown calculator-highlight" style="max-width:1000px; margin:0 auto 16px;" open>
+  <div class="drilldown calculator-highlight" style="max-width:1220px; margin:0 auto 16px;" open>
     <summary>request pricing from a Service Provider</summary>
     <div style="padding:16px;">
       <div style="margin-bottom:12px;">
@@ -3049,10 +3052,12 @@
       box.dataset.lines = String(d.lines.length);
       box.innerHTML = `
         <div style="font-size:0.85rem; margin-bottom:8px;">${esc(note)}</div>
-        <table>
+        <div style="overflow-x:auto; width:100%;">
+        <table style="min-width:1150px; white-space:nowrap;">
           <thead><tr><th>Service</th><th>Size</th><th>Bins</th><th>Frequency</th><th>Allowance</th><th>Rate</th><th>Supplier price?</th><th>Margin %</th><th>Excess</th><th>Excess $/kg</th><th>Bin rent</th><th>$/month</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
+        </div>
         ${questions ? `<div style="margin-top:10px; color:var(--error);"><strong>Please answer:</strong><ul>${questions}</ul><div style="font-size:0.8rem;">Edit the words above and check again.</div></div>` : ''}
         ${assumptions ? `<div style="margin-top:10px; color:var(--muted); font-size:0.85rem;"><strong>Assumed:</strong><ul>${assumptions}</ul></div>` : ''}
         <div id="qr2-totals" style="margin-top:10px; font-size:0.85rem;"></div>
