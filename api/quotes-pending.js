@@ -1,34 +1,26 @@
-// FWS Command Centre — Pending Quote Approvals
-// Version: v1.3
+// FWS Command Centre — Pending Quote Approvals (list)
+// Version: v1.4
 //
-// v1.3: FIX — v1.2 wrongly restricted this to admin/ops sessions.
-// Quotes are core to a sales rep's actual job, not company-wide admin
-// data the way AR/AP/margin are — any logged-in person (admin, ops,
-// or a future rep) needs to see quotes awaiting approval. Removed the
-// role restriction entirely; only a valid session is required now.
-// Once per-rep quote attribution exists, a rep-scoped filter (only
-// MY quotes) could be added here, but that's a future refinement, not
-// a reason to lock reps out entirely today.
-// v1.2: swapped the old inline single-shared-password cookie check
-// for the shared verifySession() from lib/auth.js — required now
-// that the Command Centre has moved to real per-person logins (see
-// lib/auth.js / api/login.js).
-// v1.1: Added the site-wide session-cookie check (see login.js /
-//       whoami.js for how the cookie is created and verified) — this
-//       endpoint returns real client/pricing-adjacent data, so it must
-//       reject unauthenticated requests directly, not just rely on the
-//       page itself being behind a login screen.
-//
-// Lists every quotation ticket currently sitting in the "Comparing
-// Quotes" stage — meaning all expected SPs have replied and a
-// comparison is ready for review. Uses the existing Command Centre
-// HubSpot Service Key (already has the "tickets" scope).
+// v1.4: the list shows two groups. "Awaiting approval" (all replies in, not yet generated) and
+// "Approved, not sent" (generated, waiting for the client send). A quote drops off once it is sent.
+// Ownership: each person sees the quotes they requested. John and James also see unowned quotes
+// (those made before requester tracking). Approved, not-sent quotes are marked in the subject.
+// v1.3: any logged-in person (admin, ops, or a rep) can use the list.
+// v1.2: shared verifySession() from lib/auth.js.
+// v1.1: site-wide session check.
 
-const { verifySession } = require("../lib/auth");
+const { verifySession, findUserWithPassword } = require("../lib/auth");
 
 const HUBSPOT_API_BASE = "https://api.hubapi.com";
 const QUOTATION_PIPELINE_ID = "2136460779";
-const QUOTATION_STAGE_COMPARING_QUOTES = "3704618465";
+const STAGE_COMPARING = "3704618465";   // awaiting approval
+const STAGE_DRAFTED = "3712875969";     // approved, not yet sent
+const ADMIN_USERNAMES_EMAILS = ["john.murray@futurewaste.com.au", "james@futurewaste.com.au"];
+
+function requesterOf(content) {
+  const m = String(content || "").match(/REQUESTED_BY:([^\s]+)/);
+  return m ? m[1].trim().toLowerCase() : null;
+}
 
 module.exports = async (req, res) => {
   const session = verifySession(req);
@@ -36,6 +28,10 @@ module.exports = async (req, res) => {
     res.status(401).json({ status: "error", error: "Not authenticated" });
     return;
   }
+
+  const { user } = await findUserWithPassword(session.username);
+  const caller = ((user && user.email) || "").trim().toLowerCase();
+  const isAdmin = ADMIN_USERNAMES_EMAILS.includes(caller);
 
   try {
     const hubspotResp = await fetch(`${HUBSPOT_API_BASE}/crm/v3/objects/tickets/search`, {
@@ -49,13 +45,13 @@ module.exports = async (req, res) => {
           {
             filters: [
               { propertyName: "hs_pipeline", operator: "EQ", value: QUOTATION_PIPELINE_ID },
-              { propertyName: "hs_pipeline_stage", operator: "EQ", value: QUOTATION_STAGE_COMPARING_QUOTES },
+              { propertyName: "hs_pipeline_stage", operator: "IN", values: [STAGE_COMPARING, STAGE_DRAFTED] },
             ],
           },
         ],
-        properties: ["subject", "hs_lastmodifieddate"],
+        properties: ["subject", "hs_lastmodifieddate", "hs_pipeline_stage", "content"],
         sorts: [{ propertyName: "hs_lastmodifieddate", direction: "DESCENDING" }],
-        limit: 50,
+        limit: 100,
       }),
     });
 
@@ -66,11 +62,22 @@ module.exports = async (req, res) => {
     }
 
     const data = await hubspotResp.json();
-    const quotes = (data.results || []).map((t) => ({
-      ticket_id: t.id,
-      subject: t.properties.subject,
-      last_modified: t.properties.hs_lastmodifieddate,
-    }));
+    const quotes = (data.results || [])
+      .filter((t) => {
+        const owner = requesterOf(t.properties.content);
+        if (owner === null) return isAdmin;                 // unowned: John and James only
+        return owner === caller;                            // owned: the requester only
+      })
+      .map((t) => {
+        const approved = t.properties.hs_pipeline_stage === STAGE_DRAFTED;
+        const subject = t.properties.subject || "";
+        return {
+          ticket_id: t.id,
+          subject: approved ? `Approved, not sent: ${subject}` : subject,
+          status: approved ? "approved_not_sent" : "awaiting_approval",
+          last_modified: t.properties.hs_lastmodifieddate,
+        };
+      });
 
     res.status(200).json({ status: "ok", quotes });
   } catch (err) {
