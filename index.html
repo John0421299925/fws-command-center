@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.62 — 15 Oct 2026
+     v1.62: CHANGED — Bin rent is ticked and priced per bin line, not once for the quote.
+       The read-back totals include the rent, so they match the quote.
      v1.61 — 15 Oct 2026
      v1.61: FIX — the Client Quote button counted the "Excess" note as a bin line, so it said
        3 lines and stayed greyed out with 2. The count now looks only at the Excess dropdowns.
@@ -3008,6 +3011,7 @@
       }
     }
     const QR2_BIN_SERVICES = ['General waste', 'Cardboard', 'Co-mingle', 'Organic'];
+    let qr2Base = null;   // server totals before rent, for live updates
     function renderQr2ReadBack(d) {
       const box = document.getElementById('qr2-readback');
       const rows = d.lines.map((l, i) => {
@@ -3025,11 +3029,12 @@
           <td>${isBin ? `<select id="qr2-exc-${i}" onchange="qr2ExcToggle(${i})" style="padding:4px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text);">
               <option value="">Choose…</option><option value="rate">Charge excess</option><option value="none">No excess</option></select>` : '<span style="color:var(--muted)">—</span>'}</td>
           <td>${isBin ? `<input type="number" step="0.01" min="0.01" id="qr2-exrate-${i}" disabled placeholder="$/kg" oninput="qr2RefreshAction()" style="width:80px; padding:4px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text);" />` : ''}</td>
+          <td>${isBin ? `<input type="checkbox" id="qr2-rent-${i}" onchange="qr2RentToggle(${i})" title="Bin rent for this bin" />` : '<span style="color:var(--muted)">—</span>'}</td>
+          <td>${isBin ? `<input type="number" step="0.01" min="0.01" id="qr2-rentamt-${i}" disabled placeholder="$/mo" oninput="qr2RefreshAction()" style="width:80px; padding:4px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text);" />` : ''}</td>
         </tr>`;
       }).join('');
       const questions = (d.questions || []).map((q) => `<li>${esc(q)}</li>`).join('');
       const assumptions = (d.assumptions || []).map((a) => `<li>${esc(a)}</li>`).join('');
-      const hasBin = d.lines.some((l) => QR2_BIN_SERVICES.includes(l.service));
 
       let note = '', action = '';
       if (d.route === 'mixed') {
@@ -3037,26 +3042,45 @@
       } else if (d.route === 'request_quote') {
         note = 'No prices given, so this is not a Client Quote. Use the RFP (Request for Pricing) box below.';
       } else if (!d.questions.length) {
-        note = 'This will be a Client Quote, sent to you for review. Nothing goes to the client. Tick "Supplier price" only where the price is a supplier\'s. For each bin line, choose Charge excess or No excess. Excess is shown in the quote but not in the totals.';
+        note = 'This will be a Client Quote, sent to you for review. Nothing goes to the client. Tick "Supplier price" only where the price is a supplier\'s. For each bin line, choose Charge excess or No excess, and tick Bin rent with its monthly amount if the bin is rented. Excess is shown in the quote but not in the totals.';
         action = `<button type="button" id="qr2-build-btn" onclick="qr2Build()">Client Quote</button> <span id="qr2-exc-note" style="color:var(--error); font-size:0.85rem;"></span>`;
       }
-      const rent = !d.questions.length && d.route === 'client_quote'
-        ? `<div style="margin-top:12px;"><label style="font-size:0.9rem;"><input type="checkbox" id="qr2-rent" onchange="qr2RentToggle()" /> Bin rent (monthly)</label>
-           <input type="number" step="0.01" min="0.01" id="qr2-rent-amt" disabled placeholder="$ per month" oninput="qr2RefreshAction()" style="width:140px; margin-left:8px; padding:4px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text);" /></div>`
-        : '';
+      qr2Base = d.totals || null;
       box.dataset.lines = String(d.lines.length);
       box.innerHTML = `
         <div style="font-size:0.85rem; margin-bottom:8px;">${esc(note)}</div>
         <table>
-          <thead><tr><th>Service</th><th>Size</th><th>Bins</th><th>Frequency</th><th>Allowance</th><th>Rate</th><th>Supplier price?</th><th>Margin %</th><th>Excess</th><th>Excess $/kg</th></tr></thead>
+          <thead><tr><th>Service</th><th>Size</th><th>Bins</th><th>Frequency</th><th>Allowance</th><th>Rate</th><th>Supplier price?</th><th>Margin %</th><th>Excess</th><th>Excess $/kg</th><th>Bin rent</th><th>$/month</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
         ${questions ? `<div style="margin-top:10px; color:var(--error);"><strong>Please answer:</strong><ul>${questions}</ul><div style="font-size:0.8rem;">Edit the words above and check again.</div></div>` : ''}
         ${assumptions ? `<div style="margin-top:10px; color:var(--muted); font-size:0.85rem;"><strong>Assumed:</strong><ul>${assumptions}</ul></div>` : ''}
-        ${d.totals ? `<div style="margin-top:10px; font-size:0.85rem;">Weekly ex GST <strong>$${d.totals.weekly.toFixed(2)}</strong> · Per month inc GST <strong>$${d.totals.monthly_inc.toFixed(2)}</strong> · Yearly inc GST <strong>$${d.totals.yearly_inc.toFixed(2)}</strong></div>` : ''}
-        ${rent}
+        <div id="qr2-totals" style="margin-top:10px; font-size:0.85rem;"></div>
         <div style="margin-top:12px;">${action}</div>`;
+      qr2UpdateTotals();
       if (!d.questions.length && d.route === 'client_quote') qr2RefreshAction();
+    }
+    function qr2RentSum() {
+      const n = Number(document.getElementById('qr2-readback').dataset.lines || 0);
+      let sum = 0;
+      for (let i = 0; i < n; i++) {
+        const on = document.getElementById('qr2-rent-' + i);
+        const amt = document.getElementById('qr2-rentamt-' + i);
+        if (on && on.checked && amt && amt.value > 0) sum += Number(amt.value);
+      }
+      return sum;
+    }
+    // Totals include bin rent (monthly x 12 / 52 a week), so the read-back matches the quote.
+    function qr2UpdateTotals() {
+      const el = document.getElementById('qr2-totals');
+      if (!el || !qr2Base) return;
+      const rent = qr2RentSum();
+      const weekly = qr2Base.weekly + rent * 12 / 52;
+      const monthlyEx = weekly * 52 / 12;
+      const gst = monthlyEx * 0.10;
+      const monthlyInc = monthlyEx + gst;
+      const yearlyInc = weekly * 52 * 1.10;
+      el.innerHTML = `Weekly ex GST <strong>$${weekly.toFixed(2)}</strong> · Per month inc GST <strong>$${monthlyInc.toFixed(2)}</strong> · Yearly inc GST <strong>$${yearlyInc.toFixed(2)}</strong>${rent ? ` <span style="color:var(--muted)">(includes $${rent.toFixed(2)} a month bin rent)</span>` : ''}`;
     }
     function qr2ExcToggle(i) {
       const sel = document.getElementById('qr2-exc-' + i);
@@ -3065,26 +3089,31 @@
       if (rate.disabled) rate.value = '';
       qr2RefreshAction();
     }
-    function qr2RentToggle() {
-      const on = document.getElementById('qr2-rent').checked;
-      const amt = document.getElementById('qr2-rent-amt');
+    function qr2RentToggle(i) {
+      const on = document.getElementById('qr2-rent-' + i).checked;
+      const amt = document.getElementById('qr2-rentamt-' + i);
       amt.disabled = !on;
       if (!on) amt.value = '';
+      qr2UpdateTotals();
       qr2RefreshAction();
     }
-    // Blocks the Client Quote button until every bin line has an excess choice, and every "Charge excess" has a rate.
+    // Blocks the Client Quote button until every bin line has an excess choice, every "Charge excess" has a rate,
+    // and every ticked bin rent has an amount.
     function qr2RefreshAction() {
       const btn = document.getElementById('qr2-build-btn');
+      qr2UpdateTotals();
       if (!btn) return;
       const selects = Array.from(document.querySelectorAll('select[id^="qr2-exc-"]'));
       const unanswered = selects.filter((s) => !s.value).length;
       const noRate = selects.filter((s) => s.value === 'rate' && !(document.getElementById(s.id.replace('qr2-exc-', 'qr2-exrate-')).value > 0)).length;
-      const rentOn = document.getElementById('qr2-rent');
-      const rentMissing = rentOn && rentOn.checked && !(document.getElementById('qr2-rent-amt').value > 0);
-      btn.disabled = unanswered > 0 || noRate > 0 || rentMissing;
+      const rentMissing = Array.from(document.querySelectorAll('input[id^="qr2-rent-"]')).filter((c) => {
+        const i = c.id.replace('qr2-rent-', '');
+        return c.checked && !(document.getElementById('qr2-rentamt-' + i).value > 0);
+      }).length;
+      btn.disabled = unanswered > 0 || noRate > 0 || rentMissing > 0;
       const msg = unanswered ? `Choose Charge excess or No excess for ${unanswered} bin line(s).`
         : noRate ? `Type the excess rate per kg for ${noRate} line(s).`
-        : rentMissing ? 'Type the monthly bin rent.' : '';
+        : rentMissing ? `Type the monthly rent for ${rentMissing} bin line(s), or untick it.` : '';
       document.getElementById('qr2-exc-note').textContent = msg;
     }
     function qr2LineOptions() {
@@ -3095,11 +3124,15 @@
         const m = document.getElementById('qr2-margin-' + i);
         const exc = document.getElementById('qr2-exc-' + i);
         const er = document.getElementById('qr2-exrate-' + i);
+        const rent = document.getElementById('qr2-rent-' + i);
+        const ramt = document.getElementById('qr2-rentamt-' + i);
         out.push({
           supplier: !!(sup && sup.checked),
           margin: m ? Number(m.value) : null,
           excess: exc ? (exc.value || 'not_set') : 'none',
           excess_rate: er && !er.disabled ? Number(er.value) : null,
+          rent: !!(rent && rent.checked),
+          rent_monthly: ramt && !ramt.disabled ? Number(ramt.value) : null,
         });
       }
       return out;
@@ -3124,8 +3157,7 @@
       const result = document.getElementById('qr2-result');
       result.innerHTML = '<span style="color:var(--muted)">Working…</span>';
       try {
-        const rentOn = (document.getElementById('qr2-rent') && document.getElementById('qr2-rent').checked);
-        const data = await qr2Call('build', { confirm: confirm === true, line_options: qr2LineOptions(), rent: rentOn, rent_monthly: rentOn ? Number(document.getElementById('qr2-rent-amt').value) : null });
+        const data = await qr2Call('build', { confirm: confirm === true, line_options: qr2LineOptions() });
         if (data.status === 'ok' && data.quote_no) {
           result.innerHTML = `<span style="color:var(--ok)">Client Quote ${esc(data.quote_no)} is with you for review. Nothing has been sent to the client.</span>`;
         } else if (data.status === 'ok' && data.rfp) {
