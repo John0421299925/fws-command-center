@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.61 — 15 Oct 2026
+     v1.61: FIX — the Client Quote button counted the "Excess" note as a bin line, so it said
+       3 lines and stayed greyed out with 2. The count now looks only at the Excess dropdowns.
      v1.60 — 15 Oct 2026
      v1.60: NEW — Client Quote read-back: each bin line has an Excess choice (Charge excess
        with a $/kg rate, or No excess). Excess is shown in the quote, not in the totals.
@@ -3073,7 +3076,7 @@
     function qr2RefreshAction() {
       const btn = document.getElementById('qr2-build-btn');
       if (!btn) return;
-      const selects = Array.from(document.querySelectorAll('[id^="qr2-exc-"]'));
+      const selects = Array.from(document.querySelectorAll('select[id^="qr2-exc-"]'));
       const unanswered = selects.filter((s) => !s.value).length;
       const noRate = selects.filter((s) => s.value === 'rate' && !(document.getElementById(s.id.replace('qr2-exc-', 'qr2-exrate-')).value > 0)).length;
       const rentOn = document.getElementById('qr2-rent');
