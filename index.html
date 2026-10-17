@@ -1,5 +1,7 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.64 — 17 Oct 2026
+     v1.64: CHANGED — the Client Quote button reads "Click for Next Step", in fluorescent green.
      v1.63 — 15 Oct 2026
      v1.63: FIX — the Client Quote read-back table was wider than its box, so the Bin rent
        columns ran off the right edge. The box is wider and the table scrolls sideways if needed.
@@ -1450,7 +1452,7 @@
       <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">What the client needs (a few words per service, on separate lines)</label>
       <textarea id="qr2-text" rows="4" placeholder="3m3 General waste Mon Wed Fri, 80kg/m3, $124/service" style="width:100%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-family:inherit;"></textarea>
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-        <button type="button" id="qr2-check-btn" onclick="qr2Check()">Check the read-back</button>
+        <button type="button" id="qr2-check-btn" onclick="qr2Check()" style="color:#39ff14; font-weight:600; border:1px solid #39ff14; background:transparent;">Click for Next Step</button>
       </div>
       <div id="qr2-readback" style="margin-top:14px;"></div>
       <div id="qr2-result" style="margin-top:12px;"></div>
