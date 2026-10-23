@@ -1,5 +1,8 @@
 // FWS Command Centre — Today: tasks due today and overdue
-// Version: v1.0
+// Version: v1.1
+//
+// v1.1 (23 Oct 2026): also returns tasks coming up in the next 7 days (grouped as "upcoming"), so a task
+// booked for next Tuesday shows ahead of time. Each task carries its group: overdue / today / upcoming.
 //
 // v1.0 (23 Oct 2026): the "what needs doing today" list. Reads open HubSpot tasks (the ones Time Saver
 // creates, and any made in HubSpot itself) that are due by the end of today, Sydney time, plus anything
@@ -12,6 +15,7 @@ const HUBSPOT_API_BASE = "https://api.hubapi.com";
 const ADMIN_EMAILS = ["john.murray@futurewaste.com.au", "james@futurewaste.com.au"];
 const PORTAL_ID = process.env.HUBSPOT_PORTAL_ID || "441953864";
 const TYPE_LABELS = { CALL: "Call", EMAIL: "Email", TODO: "To-do" };
+const UPCOMING_DAYS = 7;
 
 // Sydney is UTC+11 in daylight saving (first Sunday in October, 2am, to first Sunday in April, 3am), else +10.
 function firstSunday(year, month) {          // month is 1-12
@@ -71,7 +75,7 @@ module.exports = async (req, res) => {
 
     const filters = [
       { propertyName: "hs_task_status", operator: "NEQ", value: "COMPLETED" },
-      { propertyName: "hs_timestamp", operator: "LTE", value: String(endOfSydneyTodayMs()) },
+      { propertyName: "hs_timestamp", operator: "LTE", value: String(endOfSydneyTodayMs() + UPCOMING_DAYS * 86400e3) },
     ];
     if (!isAdmin) filters.push({ propertyName: "hubspot_owner_id", operator: "EQ", value: myOwnerId });
 
@@ -98,6 +102,7 @@ module.exports = async (req, res) => {
     }
 
     const todayStart = startOfSydneyTodayMs();
+    const todayEnd = endOfSydneyTodayMs();
     const out = tasks.map((t) => {
       const p = t.properties || {};
       const due = Date.parse(p.hs_timestamp);
@@ -107,6 +112,7 @@ module.exports = async (req, res) => {
         subject: p.hs_task_subject || "(no subject)",
         due: p.hs_timestamp,
         overdue: Number.isFinite(due) && due < todayStart,
+        group: !Number.isFinite(due) ? "today" : due < todayStart ? "overdue" : due <= todayEnd ? "today" : "upcoming",
         type: TYPE_LABELS[(p.hs_task_type || "").toUpperCase()] || "To-do",
         priority: p.hs_task_priority || null,
         owner: ownerId ? (owners[ownerId] || `owner ${ownerId}`) : "No owner",
@@ -118,8 +124,10 @@ module.exports = async (req, res) => {
     res.status(200).json({
       status: "ok",
       isAdmin,
-      overdueCount: out.filter((x) => x.overdue).length,
-      todayCount: out.filter((x) => !x.overdue).length,
+      overdueCount: out.filter((x) => x.group === "overdue").length,
+      todayCount: out.filter((x) => x.group === "today").length,
+      upcomingCount: out.filter((x) => x.group === "upcoming").length,
+      upcomingDays: UPCOMING_DAYS,
       tasks: out,
     });
   } catch (err) {
