@@ -1,5 +1,9 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.66 — 23 Oct 2026
+     v1.66: NEW — "Today" at the top of the page, for everyone: open tasks due today and overdue, from HubSpot
+       (the tasks Time Saver creates, and any made in HubSpot). Each rep sees their own; John and James see
+       everyone's, with who owns each one. Overdue first, in red. Backed by api/tasks-today.js. Read-only.
      v1.65 — 23 Oct 2026
      v1.65: FIXED — on the RFP form, typing a client email no longer fills the supplier contact and company. The
        browser's own autofill was doing it (it treats the fields as one contact card); autofill is now off for these fields.
@@ -1104,6 +1108,16 @@
     <p style="margin-top:8px;"><a href="/change-password.html" style="color: var(--muted); font-size: 0.8rem;">Change password</a> &nbsp;·&nbsp; <a href="/api/logout" style="color: var(--muted); font-size: 0.8rem;">Log out</a></p>
   </header>
 
+  <!-- v1.66: Today - tasks due today and overdue, for everyone (own tasks; John and James see all). -->
+  <div id="today-section">
+    <div class="vital-signs-header">
+      <div class="section-heading" id="today-heading">Today</div>
+    </div>
+    <div id="today-list" style="max-width:1220px; margin:0 auto 16px;">
+      <p style="color:var(--muted); font-size:0.85rem;">Loading…</p>
+    </div>
+  </div>
+
   <!-- v1.18: company-wide Business Vital Signs — admin only. Hidden
        entirely (not just left empty) for rep sessions, since every
        endpoint it calls now correctly 403s for role !== 'admin'. -->
@@ -1739,6 +1753,9 @@
       // wide figure, not gated per-client data.
       startStaggered(loadDealsLeaderboard, isAdmin ? 3600 : 1200, 300000);
 
+      // v1.66: Today's tasks, for everyone, every 5 minutes
+      startStaggered(loadToday, 300, 300000);
+
       // v1.20: Market Opportunity loads for EVERYONE, regardless of
       // role — it's a recruiting/motivation figure, not gated data.
       startStaggered(loadMarketOpportunity, isAdmin ? 4800 : 2400, 3600000);
@@ -1839,6 +1856,45 @@
     // other reps, full deal list only for your own row. See
     // api/deals-leaderboard.js for the session.ownerId dependency
     // this relies on to identify "your" deals.
+    // v1.66: Today - open tasks due today and overdue (api/tasks-today.js)
+    async function loadToday() {
+      const list = document.getElementById('today-list');
+      const heading = document.getElementById('today-heading');
+      try {
+        const data = await (await fetch('/api/tasks-today')).json();
+        if (data.status !== 'ok') {
+          list.innerHTML = `<p style="color:var(--muted); font-size:0.85rem;">Could not load today's tasks${data.error ? ' - ' + esc(data.error) : ''}.</p>`;
+          return;
+        }
+        heading.textContent = `Today${data.overdueCount ? ' - ' + data.overdueCount + ' overdue' : ''}${data.todayCount ? (data.overdueCount ? ', ' : ' - ') + data.todayCount + ' due today' : ''}`;
+        if (!data.tasks.length) {
+          list.innerHTML = `<p style="color:var(--muted); font-size:0.85rem;">${esc(data.note || 'Nothing due today. Reps can add one by emailing crm.agent@ - for example "remind me to call Sarah on Friday".')}</p>`;
+          return;
+        }
+        const fmt = (iso) => {
+          const d = new Date(iso);
+          return isNaN(d) ? '' : d.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+        };
+        const ordered = [...data.tasks].sort((a, b) => (b.overdue - a.overdue) || (Date.parse(a.due) - Date.parse(b.due)));
+        list.innerHTML = `
+          <table style="width:100%;">
+            <thead><tr><th>Due</th><th>Task</th><th>Type</th>${data.isAdmin ? '<th>Who</th>' : ''}<th></th></tr></thead>
+            <tbody>${ordered.map((t) => `
+              <tr>
+                <td style="white-space:nowrap; ${t.overdue ? 'color:var(--error); font-weight:600;' : ''}">${t.overdue ? 'Overdue - ' : ''}${esc(fmt(t.due))}</td>
+                <td>${esc(t.subject)}</td>
+                <td>${esc(t.type)}</td>
+                ${data.isAdmin ? `<td>${esc(t.owner)}${t.mine ? ' (you)' : ''}</td>` : ''}
+                <td><a href="${esc(t.url)}" target="_blank" rel="noopener">Open</a></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>`;
+      } catch (err) {
+        console.error('loadToday failed:', err);
+        list.innerHTML = '<p style="color:var(--muted); font-size:0.85rem;">Could not load today\'s tasks.</p>';
+      }
+    }
+
     async function loadDealsLeaderboard() {
       const list = document.getElementById('deals-leaderboard-list');
       const table = document.getElementById('my-deals-table');
