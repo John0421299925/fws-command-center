@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.67 — 23 Oct 2026
+     v1.67: Today - dates from another year show the year ("15 Oct 2025"); the Open links are a readable blue;
+       Type and Due no longer wrap; and a second list, "Coming up - next 7 days", shows tasks booked ahead.
      v1.66 — 23 Oct 2026
      v1.66: NEW — "Today" at the top of the page, for everyone: open tasks due today and overdue, from HubSpot
        (the tasks Time Saver creates, and any made in HubSpot). Each rep sees their own; John and James see
@@ -1856,7 +1859,7 @@
     // other reps, full deal list only for your own row. See
     // api/deals-leaderboard.js for the session.ownerId dependency
     // this relies on to identify "your" deals.
-    // v1.66: Today - open tasks due today and overdue (api/tasks-today.js)
+    // v1.66/v1.67: Today - open tasks overdue, due today, and coming up in the next 7 days (api/tasks-today.js)
     async function loadToday() {
       const list = document.getElementById('today-list');
       const heading = document.getElementById('today-heading');
@@ -1866,29 +1869,43 @@
           list.innerHTML = `<p style="color:var(--muted); font-size:0.85rem;">Could not load today's tasks${data.error ? ' - ' + esc(data.error) : ''}.</p>`;
           return;
         }
-        heading.textContent = `Today${data.overdueCount ? ' - ' + data.overdueCount + ' overdue' : ''}${data.todayCount ? (data.overdueCount ? ', ' : ' - ') + data.todayCount + ' due today' : ''}`;
+        const parts = [];
+        if (data.overdueCount) parts.push(data.overdueCount + ' overdue');
+        if (data.todayCount) parts.push(data.todayCount + ' due today');
+        heading.textContent = 'Today' + (parts.length ? ' - ' + parts.join(', ') : '');
         if (!data.tasks.length) {
-          list.innerHTML = `<p style="color:var(--muted); font-size:0.85rem;">${esc(data.note || 'Nothing due today. Reps can add one by emailing crm.agent@ - for example "remind me to call Sarah on Friday".')}</p>`;
+          list.innerHTML = `<p style="color:var(--muted); font-size:0.85rem;">${esc(data.note || 'Nothing due today or in the next week. Reps can add one by emailing crm.agent@ - for example "remind me to call Sarah on Friday".')}</p>`;
           return;
         }
+        const thisYear = Number(new Date().toLocaleString('en-AU', { timeZone: 'Australia/Sydney', year: 'numeric' }));
         const fmt = (iso) => {
           const d = new Date(iso);
-          return isNaN(d) ? '' : d.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+          if (isNaN(d)) return '';
+          const y = Number(d.toLocaleString('en-AU', { timeZone: 'Australia/Sydney', year: 'numeric' }));
+          const opts = { timeZone: 'Australia/Sydney', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' };
+          if (y !== thisYear) opts.year = 'numeric';
+          return d.toLocaleString('en-AU', opts);
         };
-        const ordered = [...data.tasks].sort((a, b) => (b.overdue - a.overdue) || (Date.parse(a.due) - Date.parse(b.due)));
-        list.innerHTML = `
+        const table = (rows, red) => `
           <table style="width:100%;">
             <thead><tr><th>Due</th><th>Task</th><th>Type</th>${data.isAdmin ? '<th>Who</th>' : ''}<th></th></tr></thead>
-            <tbody>${ordered.map((t) => `
+            <tbody>${rows.map((t) => `
               <tr>
-                <td style="white-space:nowrap; ${t.overdue ? 'color:var(--error); font-weight:600;' : ''}">${t.overdue ? 'Overdue - ' : ''}${esc(fmt(t.due))}</td>
+                <td style="white-space:nowrap; ${red && t.group === 'overdue' ? 'color:var(--error); font-weight:600;' : ''}">${t.group === 'overdue' ? 'Overdue - ' : ''}${esc(fmt(t.due))}</td>
                 <td>${esc(t.subject)}</td>
-                <td>${esc(t.type)}</td>
+                <td style="white-space:nowrap;">${esc(t.type)}</td>
                 ${data.isAdmin ? `<td>${esc(t.owner)}${t.mine ? ' (you)' : ''}</td>` : ''}
-                <td><a href="${esc(t.url)}" target="_blank" rel="noopener">Open</a></td>
+                <td><a href="${esc(t.url)}" target="_blank" rel="noopener" style="color:var(--revenue-blue); font-weight:600;">Open</a></td>
               </tr>`).join('')}
             </tbody>
           </table>`;
+        const byDue = (a, b) => Date.parse(a.due) - Date.parse(b.due);
+        const now = data.tasks.filter((t) => t.group !== 'upcoming').sort((a, b) => ((b.group === 'overdue') - (a.group === 'overdue')) || byDue(a, b));
+        const soon = data.tasks.filter((t) => t.group === 'upcoming').sort(byDue);
+        list.innerHTML =
+          (now.length ? table(now, true) : '<p style="color:var(--muted); font-size:0.85rem;">Nothing overdue or due today.</p>')
+          + `<p style="margin:18px 0 6px; color:var(--muted); font-size:0.8rem; letter-spacing:0.05em; text-transform:uppercase;">Coming up - next ${data.upcomingDays || 7} days${soon.length ? ' (' + soon.length + ')' : ''}</p>`
+          + (soon.length ? table(soon, false) : '<p style="color:var(--muted); font-size:0.85rem;">Nothing booked for the next week.</p>');
       } catch (err) {
         console.error('loadToday failed:', err);
         list.innerHTML = '<p style="color:var(--muted); font-size:0.85rem;">Could not load today\'s tasks.</p>';
