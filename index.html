@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.65 — 23 Oct 2026
+     v1.65: FIXED — on the RFP form, typing a client email no longer fills the supplier contact and company. The
+       browser's own autofill was doing it (it treats the fields as one contact card); autofill is now off for these fields.
      v1.64 — 17 Oct 2026
      v1.64: CHANGED — the Client Quote button reads "Click for Next Step", in fluorescent green.
      v1.63 — 15 Oct 2026
@@ -1509,31 +1512,31 @@
         <div style="border-top:1px solid var(--border); margin:16px 0; padding-top:12px; display:flex; flex-wrap:wrap; gap:12px;">
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Suburb *</label>
-            <input id="qr-suburb" type="text" placeholder="e.g. Newtown" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
+            <input id="qr-suburb" name="fws-qr-suburb-x" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" placeholder="e.g. Newtown" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:140px;" />
           </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">State</label>
-            <input id="qr-state" type="text" value="NSW" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
+            <input id="qr-state" name="fws-qr-state-x" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" value="NSW" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:70px;" />
           </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client name</label>
-            <input id="qr-client-name" type="text" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:220px;" />
+            <input id="qr-client-name" name="fws-qr-client-name-x" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:220px;" />
           </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Client contact email</label>
-            <input id="qr-client-email" type="email" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:200px;" />
+            <input id="qr-client-email" name="fws-qr-client-email-x" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" inputmode="email" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:200px;" />
           </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Margin instruction</label>
-            <input id="qr-margin" type="text" placeholder="e.g. 20%" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:90px;" />
+            <input id="qr-margin" name="fws-qr-margin-x" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" placeholder="e.g. 20%" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:90px;" />
           </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">Named SP contact (optional)</label>
-            <input id="qr-sp-contact" type="text" placeholder="e.g. Celeste" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
+            <input id="qr-sp-contact" name="fws-qr-sp-contact-x" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" placeholder="e.g. Celeste" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
           </div>
           <div>
             <label style="display:block; font-size:0.75rem; color:var(--muted); margin-bottom:4px;">SP company hint</label>
-            <input id="qr-sp-company" type="text" placeholder="e.g. Remondis" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
+            <input id="qr-sp-company" name="fws-qr-sp-company-x" autocomplete="off" data-lpignore="true" data-form-type="other" type="text" placeholder="e.g. Remondis" style="padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text); width:120px;" />
           </div>
         </div>
       </div>
