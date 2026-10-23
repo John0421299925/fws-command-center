@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <!-- FWS Command Center — index.html
+     v1.68 — 23 Oct 2026
+     v1.68: Today - John and James see THEIR OWN tasks first (overdue, today, coming up), then a separate "Team"
+       section with everyone else's (and tasks with no owner). The heading counts your own tasks only. Reps unchanged.
      v1.67 — 23 Oct 2026
      v1.67: Today - dates from another year show the year ("15 Oct 2025"); the Open links are a readable blue;
        Type and Due no longer wrap; and a second list, "Coming up - next 7 days", shows tasks booked ahead.
@@ -1869,9 +1872,14 @@
           list.innerHTML = `<p style="color:var(--muted); font-size:0.85rem;">Could not load today's tasks${data.error ? ' - ' + esc(data.error) : ''}.</p>`;
           return;
         }
+        // v1.68: for John and James, the main lists are their OWN tasks; everyone else's go under "Team"
+        const mineOnly = data.isAdmin ? data.tasks.filter((t) => t.mine) : data.tasks;
+        const team = data.isAdmin ? data.tasks.filter((t) => !t.mine) : [];
         const parts = [];
-        if (data.overdueCount) parts.push(data.overdueCount + ' overdue');
-        if (data.todayCount) parts.push(data.todayCount + ' due today');
+        const ownOverdue = mineOnly.filter((t) => t.group === 'overdue').length;
+        const ownToday = mineOnly.filter((t) => t.group === 'today').length;
+        if (ownOverdue) parts.push(ownOverdue + ' overdue');
+        if (ownToday) parts.push(ownToday + ' due today');
         heading.textContent = 'Today' + (parts.length ? ' - ' + parts.join(', ') : '');
         if (!data.tasks.length) {
           list.innerHTML = `<p style="color:var(--muted); font-size:0.85rem;">${esc(data.note || 'Nothing due today or in the next week. Reps can add one by emailing crm.agent@ - for example "remind me to call Sarah on Friday".')}</p>`;
@@ -1900,12 +1908,21 @@
             </tbody>
           </table>`;
         const byDue = (a, b) => Date.parse(a.due) - Date.parse(b.due);
-        const now = data.tasks.filter((t) => t.group !== 'upcoming').sort((a, b) => ((b.group === 'overdue') - (a.group === 'overdue')) || byDue(a, b));
-        const soon = data.tasks.filter((t) => t.group === 'upcoming').sort(byDue);
+        const now = mineOnly.filter((t) => t.group !== 'upcoming').sort((a, b) => ((b.group === 'overdue') - (a.group === 'overdue')) || byDue(a, b));
+        const soon = mineOnly.filter((t) => t.group === 'upcoming').sort(byDue);
+        const order = { overdue: 0, today: 1, upcoming: 2 };
+        const teamSorted = [...team].sort((a, b) => (order[a.group] - order[b.group]) || byDue(a, b));
+        const teamOverdue = team.filter((t) => t.group === 'overdue').length;
+        const sub = (text) => `<p style="margin:18px 0 6px; color:var(--muted); font-size:0.8rem; letter-spacing:0.05em; text-transform:uppercase;">${text}</p>`;
         list.innerHTML =
-          (now.length ? table(now, true) : '<p style="color:var(--muted); font-size:0.85rem;">Nothing overdue or due today.</p>')
-          + `<p style="margin:18px 0 6px; color:var(--muted); font-size:0.8rem; letter-spacing:0.05em; text-transform:uppercase;">Coming up - next ${data.upcomingDays || 7} days${soon.length ? ' (' + soon.length + ')' : ''}</p>`
-          + (soon.length ? table(soon, false) : '<p style="color:var(--muted); font-size:0.85rem;">Nothing booked for the next week.</p>');
+          (data.isAdmin ? sub('Yours') : '')
+          + (now.length ? table(now, true) : '<p style="color:var(--muted); font-size:0.85rem;">Nothing overdue or due today.</p>')
+          + sub(`Coming up - next ${data.upcomingDays || 7} days${soon.length ? ' (' + soon.length + ')' : ''}`)
+          + (soon.length ? table(soon, false) : '<p style="color:var(--muted); font-size:0.85rem;">Nothing booked for the next week.</p>')
+          + (data.isAdmin
+              ? sub(`Team - everyone else's${teamSorted.length ? ' (' + teamSorted.length + (teamOverdue ? ', ' + teamOverdue + ' overdue' : '') + ')' : ''}`)
+                + (teamSorted.length ? table(teamSorted, true) : '<p style="color:var(--muted); font-size:0.85rem;">Nothing for the rest of the team.</p>')
+              : '');
       } catch (err) {
         console.error('loadToday failed:', err);
         list.innerHTML = '<p style="color:var(--muted); font-size:0.85rem;">Could not load today\'s tasks.</p>';
