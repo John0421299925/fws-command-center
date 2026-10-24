@@ -1,5 +1,8 @@
 // FWS Command Centre — Today: tasks due today and overdue
-// Version: v1.1
+// Version: v1.2
+//
+// v1.2 (24 Oct 2026): task links open the task in HubSpot's Tasks view. The old record/0-27 link gave a
+// "page not found", because HubSpot doesn't open tasks as record pages.
 //
 // v1.1 (23 Oct 2026): also returns tasks coming up in the next 7 days (grouped as "upcoming"), so a task
 // booked for next Tuesday shows ahead of time. Each task carries its group: overdue / today / upcoming.
@@ -117,7 +120,7 @@ module.exports = async (req, res) => {
         priority: p.hs_task_priority || null,
         owner: ownerId ? (owners[ownerId] || `owner ${ownerId}`) : "No owner",
         mine: ownerId !== null && ownerId === myOwnerId,
-        url: `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-27/${t.id}`,
+        url: `https://app.hubspot.com/tasks/${PORTAL_ID}/view/all/task/${t.id}`,
       };
     });
 
